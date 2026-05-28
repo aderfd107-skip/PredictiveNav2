@@ -1,0 +1,11 @@
+build/
+install/
+log/
+
+__pycache__/
+*.py[cod]
+
+.vscode/browse.vc.db*
+
+frames_*.gv
+frames_*.pdf

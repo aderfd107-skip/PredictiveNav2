@@ -1,0 +1,326 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <world name="office_service_mvp">
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+
+    <gui fullscreen="0">
+      <camera name="overview_camera">
+        <pose>0 -11 12 1.05 0 0</pose>
+        <view_controller>orbit</view_controller>
+        <projection_type>perspective</projection_type>
+      </camera>
+    </gui>
+
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 8 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation>
+        <range>100</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.4 0.4 -0.8</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <pose>0 0 0 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>14.5 10.5</size>
+            </plane>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+
+    <!-- Outer walls: 14m x 10m boundary, wall height 1.2m. -->
+    <model name="wall_north">
+      <static>true</static>
+      <pose>0 5.0 0.6 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>14.0 0.12 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>14.0 0.12 1.2</size></box></geometry><material><ambient>0.75 0.75 0.72 1</ambient><diffuse>0.75 0.75 0.72 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="wall_south">
+      <static>true</static>
+      <pose>0 -5.0 0.6 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>14.0 0.12 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>14.0 0.12 1.2</size></box></geometry><material><ambient>0.75 0.75 0.72 1</ambient><diffuse>0.75 0.75 0.72 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="wall_east">
+      <static>true</static>
+      <pose>7.0 0 0.6 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.12 10.0 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 10.0 1.2</size></box></geometry><material><ambient>0.75 0.75 0.72 1</ambient><diffuse>0.75 0.75 0.72 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="wall_west">
+      <static>true</static>
+      <pose>-7.0 0 0.6 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.12 10.0 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 10.0 1.2</size></box></geometry><material><ambient>0.75 0.75 0.72 1</ambient><diffuse>0.75 0.75 0.72 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <!-- Upper room partitions, leaving door openings into the main corridor. -->
+    <model name="upper_corridor_wall_left">
+      <static>true</static>
+      <pose>-4.75 1.0 0.6 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>4.5 0.12 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>4.5 0.12 1.2</size></box></geometry><material><ambient>0.78 0.78 0.76 1</ambient><diffuse>0.78 0.78 0.76 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="upper_corridor_wall_mid">
+      <static>true</static>
+      <pose>-0.35 1.0 0.6 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>2.7 0.12 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>2.7 0.12 1.2</size></box></geometry><material><ambient>0.78 0.78 0.76 1</ambient><diffuse>0.78 0.78 0.76 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="upper_corridor_wall_right">
+      <static>true</static>
+      <pose>4.55 1.0 0.6 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>4.2 0.12 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>4.2 0.12 1.2</size></box></geometry><material><ambient>0.78 0.78 0.76 1</ambient><diffuse>0.78 0.78 0.76 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="upper_partition_a_equipment">
+      <static>true</static>
+      <pose>-2.4 3.45 0.6 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.12 3.1 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 3.1 1.2</size></box></geometry><material><ambient>0.78 0.78 0.76 1</ambient><diffuse>0.78 0.78 0.76 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="upper_partition_equipment_b">
+      <static>true</static>
+      <pose>1.6 3.45 0.6 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.12 3.1 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 3.1 1.2</size></box></geometry><material><ambient>0.78 0.78 0.76 1</ambient><diffuse>0.78 0.78 0.76 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <!-- Lower service area partitions. -->
+    <model name="lower_corridor_wall_left_west">
+      <static>true</static>
+      <pose>-6.3 -1.0 0.6 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>1.4 0.12 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>1.4 0.12 1.2</size></box></geometry><material><ambient>0.78 0.78 0.76 1</ambient><diffuse>0.78 0.78 0.76 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="lower_corridor_wall_left_east">
+      <static>true</static>
+      <pose>-3.6 -1.0 0.6 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>1.6 0.12 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>1.6 0.12 1.2</size></box></geometry><material><ambient>0.78 0.78 0.76 1</ambient><diffuse>0.78 0.78 0.76 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="lower_corridor_wall_mid">
+      <static>true</static>
+      <pose>-0.75 -1.0 0.6 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>2.8 0.12 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>2.8 0.12 1.2</size></box></geometry><material><ambient>0.78 0.78 0.76 1</ambient><diffuse>0.78 0.78 0.76 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="front_office_partition">
+      <static>true</static>
+      <pose>-3.0 -2.0 0.6 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.12 2.0 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 2.0 1.2</size></box></geometry><material><ambient>0.78 0.78 0.76 1</ambient><diffuse>0.78 0.78 0.76 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="office_narrow_partition">
+      <static>true</static>
+      <pose>1.5 -2.0 0.6 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.12 2.0 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 2.0 1.2</size></box></geometry><material><ambient>0.78 0.78 0.76 1</ambient><diffuse>0.78 0.78 0.76 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="narrow_passage_top_block">
+      <static>true</static>
+      <pose>3.75 -1.45 0.45 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>2.4 0.55 0.9</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>2.4 0.55 0.9</size></box></geometry><material><ambient>0.50 0.54 0.58 1</ambient><diffuse>0.50 0.54 0.58 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="narrow_passage_bottom_block">
+      <static>true</static>
+      <pose>3.75 -2.75 0.45 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>2.4 0.55 0.9</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>2.4 0.55 0.9</size></box></geometry><material><ambient>0.50 0.54 0.58 1</ambient><diffuse>0.50 0.54 0.58 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="storage_printer_partition">
+      <static>true</static>
+      <pose>-3.0 -3.9 0.6 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.12 1.8 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 1.8 1.2</size></box></geometry><material><ambient>0.78 0.78 0.76 1</ambient><diffuse>0.78 0.78 0.76 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="printer_charging_partition">
+      <static>true</static>
+      <pose>1.5 -3.9 0.6 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.12 1.8 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 1.8 1.2</size></box></geometry><material><ambient>0.78 0.78 0.76 1</ambient><diffuse>0.78 0.78 0.76 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <!-- Furniture and semantic fixtures. -->
+    <model name="front_service_counter">
+      <static>true</static>
+      <pose>-5.45 -1.75 0.35 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>1.8 0.42 0.7</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>1.8 0.42 0.7</size></box></geometry><material><ambient>0.36 0.24 0.16 1</ambient><diffuse>0.36 0.24 0.16 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="storage_shelf">
+      <static>true</static>
+      <pose>-5.35 -3.85 0.45 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>1.7 0.35 0.9</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>1.7 0.35 0.9</size></box></geometry><material><ambient>0.25 0.32 0.38 1</ambient><diffuse>0.25 0.32 0.38 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="printer_block">
+      <static>true</static>
+      <pose>-0.8 -3.85 0.35 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.9 0.55 0.7</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.9 0.55 0.7</size></box></geometry><material><ambient>0.18 0.18 0.18 1</ambient><diffuse>0.18 0.18 0.18 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="charging_station_1">
+      <static>true</static>
+      <pose>4.5 -4.55 0.2 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.75 0.35 0.4</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.75 0.35 0.4</size></box></geometry><material><ambient>0.05 0.38 0.18 1</ambient><diffuse>0.05 0.38 0.18 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="charging_station_2">
+      <static>true</static>
+      <pose>5.8 -4.55 0.2 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.75 0.35 0.4</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.75 0.35 0.4</size></box></geometry><material><ambient>0.05 0.38 0.18 1</ambient><diffuse>0.05 0.38 0.18 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <!-- Robot home / spawn pads: visual-only markers in front of charging stations. -->
+    <model name="spawn_pad_robot_1">
+      <static>true</static>
+      <pose>5.8 -3.85 0.0075 0 0 1.5708</pose>
+      <link name="link">
+        <visual name="visual"><geometry><box><size>0.82 0.62 0.015</size></box></geometry><material><ambient>0.0 0.25 1.0 0.65</ambient><diffuse>0.0 0.25 1.0 0.65</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="spawn_pad_robot_2">
+      <static>true</static>
+      <pose>4.5 -3.85 0.0075 0 0 1.5708</pose>
+      <link name="link">
+        <visual name="visual"><geometry><box><size>0.82 0.62 0.015</size></box></geometry><material><ambient>1.0 0.42 0.0 0.65</ambient><diffuse>1.0 0.42 0.0 0.65</diffuse></material></visual>
+      </link>
+    </model>
+
+    <!-- Task point markers: cylinders are visual landmarks only. -->
+    <model name="marker_pickup_front_desk">
+      <static>true</static>
+      <pose>-5.5 -0.65 0.0125 0 0 0</pose>
+      <link name="link">
+        <visual name="visual"><geometry><cylinder><radius>0.10</radius><length>0.025</length></cylinder></geometry><material><ambient>0.0 0.6 1.0 1</ambient><diffuse>0.0 0.6 1.0 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="marker_pickup_storage">
+      <static>true</static>
+      <pose>-5.35 -3.05 0.0125 0 0 0</pose>
+      <link name="link">
+        <visual name="visual"><geometry><cylinder><radius>0.10</radius><length>0.025</length></cylinder></geometry><material><ambient>0.0 0.6 1.0 1</ambient><diffuse>0.0 0.6 1.0 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="marker_inspect_equipment">
+      <static>true</static>
+      <pose>-0.3 1.55 0.0125 0 0 0</pose>
+      <link name="link">
+        <visual name="visual"><geometry><cylinder><radius>0.10</radius><length>0.025</length></cylinder></geometry><material><ambient>1.0 0.55 0.05 1</ambient><diffuse>1.0 0.55 0.05 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="marker_meeting_a">
+      <static>true</static>
+      <pose>-4.7 1.55 0.0125 0 0 0</pose>
+      <link name="link">
+        <visual name="visual"><geometry><cylinder><radius>0.10</radius><length>0.025</length></cylinder></geometry><material><ambient>0.7 0.2 1.0 1</ambient><diffuse>0.7 0.2 1.0 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="marker_meeting_b">
+      <static>true</static>
+      <pose>4.2 1.55 0.0125 0 0 0</pose>
+      <link name="link">
+        <visual name="visual"><geometry><cylinder><radius>0.10</radius><length>0.025</length></cylinder></geometry><material><ambient>0.7 0.2 1.0 1</ambient><diffuse>0.7 0.2 1.0 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="marker_printer">
+      <static>true</static>
+      <pose>-0.8 -3.05 0.0125 0 0 0</pose>
+      <link name="link">
+        <visual name="visual"><geometry><cylinder><radius>0.10</radius><length>0.025</length></cylinder></geometry><material><ambient>1.0 0.55 0.05 1</ambient><diffuse>1.0 0.55 0.05 1</diffuse></material></visual>
+      </link>
+    </model>
+  </world>
+</sdf>

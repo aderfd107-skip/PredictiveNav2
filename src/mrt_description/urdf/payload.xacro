@@ -1,0 +1,148 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:macro name="mrt_payload_box" params="enabled:=true accent_color:=mrt_blue">
+    <xacro:if value="${enabled}">
+      <link name="payload_box_link">
+        <visual>
+          <origin xyz="0 0 0" rpy="0 0 0"/>
+          <geometry>
+            <box size="0.38 0.34 0.30"/>
+          </geometry>
+          <material name="mrt_white"/>
+        </visual>
+        <collision>
+          <origin xyz="0 0 0" rpy="0 0 0"/>
+          <geometry>
+            <box size="0.38 0.34 0.30"/>
+          </geometry>
+        </collision>
+        <xacro:box_inertia mass="3.5" x="0.38" y="0.34" z="0.30"/>
+      </link>
+
+      <joint name="payload_box_joint" type="fixed">
+        <parent link="top_deck_link"/>
+        <child link="payload_box_link"/>
+        <origin xyz="-0.03 0 0.167" rpy="0 0 0"/>
+      </joint>
+
+      <link name="payload_lid_link">
+        <visual>
+          <origin xyz="0 0 0" rpy="0 0 0"/>
+          <geometry>
+            <box size="0.38 0.34 0.025"/>
+          </geometry>
+          <material name="${accent_color}"/>
+        </visual>
+        <collision>
+          <origin xyz="0 0 0" rpy="0 0 0"/>
+          <geometry>
+            <box size="0.38 0.34 0.025"/>
+          </geometry>
+        </collision>
+        <xacro:box_inertia mass="0.4" x="0.38" y="0.34" z="0.025"/>
+      </link>
+
+      <joint name="payload_lid_joint" type="fixed">
+        <parent link="payload_box_link"/>
+        <child link="payload_lid_link"/>
+        <origin xyz="0 0 0.165" rpy="0 0 0"/>
+      </joint>
+    </xacro:if>
+  </xacro:macro>
+
+  <xacro:macro name="mrt_inspection_mast" params="enabled:=true accent_color:=mrt_orange">
+    <xacro:if value="${enabled}">
+      <link name="mast_base_link">
+        <visual>
+          <origin xyz="0 0 0" rpy="0 0 0"/>
+          <geometry>
+            <box size="0.16 0.12 0.06"/>
+          </geometry>
+          <material name="${accent_color}"/>
+        </visual>
+        <collision>
+          <origin xyz="0 0 0" rpy="0 0 0"/>
+          <geometry>
+            <box size="0.16 0.12 0.06"/>
+          </geometry>
+        </collision>
+        <xacro:box_inertia mass="0.5" x="0.16" y="0.12" z="0.06"/>
+      </link>
+
+      <joint name="mast_base_joint" type="fixed">
+        <parent link="top_deck_link"/>
+        <child link="mast_base_link"/>
+        <origin xyz="-0.08 0 0.047" rpy="0 0 0"/>
+      </joint>
+
+      <link name="mast_link">
+        <visual>
+          <origin xyz="0 0 0" rpy="0 0 0"/>
+          <geometry>
+            <cylinder radius="0.018" length="0.36"/>
+          </geometry>
+          <material name="mrt_dark_grey"/>
+        </visual>
+        <collision>
+          <origin xyz="0 0 0" rpy="0 0 0"/>
+          <geometry>
+            <cylinder radius="0.018" length="0.36"/>
+          </geometry>
+        </collision>
+        <xacro:cylinder_inertia_z mass="0.25" radius="0.018" length="0.36"/>
+      </link>
+
+      <joint name="mast_joint" type="fixed">
+        <parent link="mast_base_link"/>
+        <child link="mast_link"/>
+        <origin xyz="0 0 0.21" rpy="0 0 0"/>
+      </joint>
+
+      <link name="sensor_head_link">
+        <visual>
+          <origin xyz="0 0 0" rpy="0 0 0"/>
+          <geometry>
+            <box size="0.14 0.08 0.07"/>
+          </geometry>
+          <material name="${accent_color}"/>
+        </visual>
+        <collision>
+          <origin xyz="0 0 0" rpy="0 0 0"/>
+          <geometry>
+            <box size="0.14 0.08 0.07"/>
+          </geometry>
+        </collision>
+        <xacro:box_inertia mass="0.35" x="0.14" y="0.08" z="0.07"/>
+      </link>
+
+      <joint name="sensor_head_joint" type="fixed">
+        <parent link="mast_link"/>
+        <child link="sensor_head_link"/>
+        <origin xyz="0.045 0 0.205" rpy="0 0 0"/>
+      </joint>
+
+      <link name="status_light_link">
+        <visual>
+          <origin xyz="0 0 0" rpy="0 0 0"/>
+          <geometry>
+            <cylinder radius="0.035" length="0.025"/>
+          </geometry>
+          <material name="${accent_color}"/>
+        </visual>
+        <collision>
+          <origin xyz="0 0 0" rpy="0 0 0"/>
+          <geometry>
+            <cylinder radius="0.035" length="0.025"/>
+          </geometry>
+        </collision>
+        <xacro:cylinder_inertia_z mass="0.08" radius="0.035" length="0.025"/>
+      </link>
+
+      <joint name="status_light_joint" type="fixed">
+        <parent link="sensor_head_link"/>
+        <child link="status_light_link"/>
+        <origin xyz="0 0 0.055" rpy="0 0 0"/>
+      </joint>
+    </xacro:if>
+  </xacro:macro>
+</robot>
