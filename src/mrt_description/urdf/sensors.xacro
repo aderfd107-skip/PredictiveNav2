@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
-  <xacro:macro name="mrt_lidar">
+  <xacro:macro name="mrt_lidar" params="x:=0.22 y:=0 z:=0.045">
     <link name="lidar_link">
       <visual>
         <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -21,7 +21,7 @@
     <joint name="lidar_joint" type="fixed">
       <parent link="top_deck_link"/>
       <child link="lidar_link"/>
-      <origin xyz="0.22 0 0.045" rpy="0 0 0"/>
+      <origin xyz="${x} ${y} ${z}" rpy="0 0 0"/>
     </joint>
   </xacro:macro>
 

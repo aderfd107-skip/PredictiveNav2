@@ -10,6 +10,7 @@ install(
 
 install(
   PROGRAMS
+    scripts/collision_guard.py
     scripts/office_map_marker_publisher.py
   DESTINATION lib/${PROJECT_NAME}
 )

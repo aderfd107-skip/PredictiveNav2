@@ -23,6 +23,9 @@ def robot_description_command(
     payload_enabled,
     mast_enabled,
     camera_enabled,
+    lidar_x="0.22",
+    lidar_y="0",
+    lidar_z="0.045",
 ):
     return Command(
         [
@@ -42,6 +45,12 @@ def robot_description_command(
             mast_enabled,
             " camera_enabled:=",
             camera_enabled,
+            " lidar_x:=",
+            lidar_x,
+            " lidar_y:=",
+            lidar_y,
+            " lidar_z:=",
+            lidar_z,
             " use_gazebo_plugins:=true",
         ]
     )
@@ -55,6 +64,9 @@ def robot_state_publisher_node(
     payload_enabled,
     mast_enabled,
     camera_enabled,
+    lidar_x="0.22",
+    lidar_y="0",
+    lidar_z="0.045",
 ):
     return Node(
         package="robot_state_publisher",
@@ -73,6 +85,9 @@ def robot_state_publisher_node(
                     payload_enabled,
                     mast_enabled,
                     camera_enabled,
+                    lidar_x,
+                    lidar_y,
+                    lidar_z,
                 ),
                 "use_sim_time": True,
             }
@@ -84,38 +99,29 @@ def robot_state_publisher_node(
     )
 
 
-def joint_state_publisher_node(
-    namespace,
-    robot_name,
-    robot_role,
-    robot_color,
-    payload_enabled,
-    mast_enabled,
-    camera_enabled,
-):
+def collision_guard_node(namespace):
     return Node(
-        package="joint_state_publisher",
-        executable="joint_state_publisher",
+        package="mrt_simulation",
+        executable="collision_guard.py",
         namespace=namespace,
-        name="joint_state_publisher",
+        name="collision_guard",
         output="screen",
         condition=IfCondition(LaunchConfiguration("spawn_robots")),
         parameters=[
             {
-                "robot_description": robot_description_command(
-                    robot_name,
-                    robot_role,
-                    robot_color,
-                    payload_enabled,
-                    mast_enabled,
-                    camera_enabled,
-                ),
                 "use_sim_time": True,
+                "stop_distance": 0.2,
+                "slow_distance": 0.5,
+                "front_sector_degrees": 46.0,
+                "rear_sector_degrees": 42.0,
+                "publish_rate": 30.0,
+                "cmd_timeout": 0.35,
             }
         ],
         remappings=[
-            ("joint_states", f"/{namespace}/joint_states"),
-            ("robot_description", f"/{namespace}/robot_description"),
+            ("cmd_vel_in", f"/{namespace}/cmd_vel"),
+            ("cmd_vel_out", f"/{namespace}/cmd_vel_safe"),
+            ("scan", f"/{namespace}/scan"),
         ],
     )
 
@@ -190,20 +196,36 @@ def ros_gz_bridge_node():
         condition=IfCondition(LaunchConfiguration("use_bridge")),
         arguments=[
             "/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock",
-            "/robot_1/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist",
+            "/robot_1/cmd_vel_safe@geometry_msgs/msg/Twist]gz.msgs.Twist",
             "/robot_1/odom@nav_msgs/msg/Odometry[gz.msgs.Odometry",
             "/robot_1/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",
             "/robot_1/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan",
             "/robot_1/imu@sensor_msgs/msg/Imu[gz.msgs.IMU",
-            "/robot_2/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist",
+            "/robot_2/cmd_vel_safe@geometry_msgs/msg/Twist]gz.msgs.Twist",
             "/robot_2/odom@nav_msgs/msg/Odometry[gz.msgs.Odometry",
             "/robot_2/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",
             "/robot_2/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan",
             "/robot_2/imu@sensor_msgs/msg/Imu[gz.msgs.IMU",
+            (
+                "/world/office_service_mvp/model/robot_1/joint_state"
+                "@sensor_msgs/msg/JointState[gz.msgs.Model"
+            ),
+            (
+                "/world/office_service_mvp/model/robot_2/joint_state"
+                "@sensor_msgs/msg/JointState[gz.msgs.Model"
+            ),
         ],
         remappings=[
             ("/robot_1/tf", "/tf"),
             ("/robot_2/tf", "/tf"),
+            (
+                "/world/office_service_mvp/model/robot_1/joint_state",
+                "/robot_1/joint_states",
+            ),
+            (
+                "/world/office_service_mvp/model/robot_2/joint_state",
+                "/robot_2/joint_states",
+            ),
         ],
     )
 
@@ -304,15 +326,7 @@ def generate_launch_description():
             office_map_marker_node(LaunchConfiguration("world")),
             static_odom_anchor_node(namespace="robot_1", x=5.8, y=-3.85, yaw=1.5708),
             static_odom_anchor_node(namespace="robot_2", x=4.5, y=-3.85, yaw=1.5708),
-            joint_state_publisher_node(
-                namespace="robot_1",
-                robot_name="robot_1",
-                robot_role="delivery",
-                robot_color="mrt_blue",
-                payload_enabled=LaunchConfiguration("robot_1_payload_enabled"),
-                mast_enabled="false",
-                camera_enabled="true",
-            ),
+            collision_guard_node(namespace="robot_1"),
             robot_state_publisher_node(
                 namespace="robot_1",
                 robot_name="robot_1",
@@ -321,17 +335,12 @@ def generate_launch_description():
                 payload_enabled=LaunchConfiguration("robot_1_payload_enabled"),
                 mast_enabled="false",
                 camera_enabled="true",
+                lidar_x="-0.03",
+                lidar_y="0",
+                lidar_z="0.372",
             ),
             spawn_robot_node(namespace="robot_1", x=5.8, y=-3.85, yaw=1.5708),
-            joint_state_publisher_node(
-                namespace="robot_2",
-                robot_name="robot_2",
-                robot_role="inspection",
-                robot_color="mrt_orange",
-                payload_enabled=LaunchConfiguration("robot_2_payload_enabled"),
-                mast_enabled="true",
-                camera_enabled="false",
-            ),
+            collision_guard_node(namespace="robot_2"),
             robot_state_publisher_node(
                 namespace="robot_2",
                 robot_name="robot_2",
