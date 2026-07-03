@@ -4,7 +4,7 @@ project(mrt_simulation)
 find_package(ament_cmake REQUIRED)
 
 install(
-  DIRECTORY launch rviz worlds
+  DIRECTORY config launch maps rviz worlds
   DESTINATION share/${PROJECT_NAME}
 )
 

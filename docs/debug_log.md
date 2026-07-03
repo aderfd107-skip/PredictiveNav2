@@ -158,3 +158,76 @@ ros2 topic echo /robot_1/cmd_vel_safe
 - 差速驱动仿真中，如果轮子撞墙后继续空转，轮式 odom 可能继续积分并产生漂移。
 - 在公开的 `/cmd_vel` 和 Gazebo 实际驱动话题之间加一层安全过滤，可以避免很多不真实的仿真行为。
 - 记录完整的话题链路非常重要，后面再遇到类似问题会排查得更快。
+
+---
+
+### 2026-06-09：SLAM 建图时 map 和 odom 偏离过大，小车在 RViz 中闪回
+
+#### 问题现象
+- 运行 `robot_1_slam.launch.py` 手动建图时，RViz 中 `map` 坐标轴和 `robot_1/odom` 坐标轴距离越来越远。
+- 小车在 RViz 中会出现“向前走一段，然后突然闪回之前位置”的现象。
+- Gazebo 中模型位置相对稳定，但 RViz 中的机器人、激光和地图匹配结果会发生明显跳变。
+
+#### 初步判断
+- `map` 和 `odom` 有偏移本身是正常的，因为 SLAM 会发布 `map -> robot_1/odom` 来修正里程计误差。
+- 但是偏移过大并伴随闪回，说明里程计和激光匹配结果差异太大。
+- 重点怀疑：
+  - 轮式 odom 受打滑影响产生漂移；
+  - 狭窄走廊中激光匹配约束较强，SLAM 会突然修正位姿；
+  - 轮速里程计和 Gazebo 中模型真实位姿不一致。
+
+#### 排查命令
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+ros2 topic info /robot_1/odom -v
+ros2 topic info /tf -v
+ros2 topic echo --once /map --field info
+ros2 lifecycle get /slam_toolbox
+ros2 run tf2_ros tf2_echo map robot_1/odom
+ros2 run tf2_ros tf2_echo robot_1/odom robot_1/base_footprint
+```
+
+#### 根因
+- 原先主 `/robot_1/odom` 和 `/tf` 主要来自 Gazebo DiffDrive 的轮式里程计。
+- 仿真中小车转向、接触墙体或在狭窄空间运动时，轮子可能发生打滑或非理想接触。
+- 轮式 odom 积分出来的位置和 Gazebo 中模型真实位置逐渐不一致。
+- SLAM 根据激光扫描重新匹配地图时，会通过 `map -> odom` 做较大修正，于是 RViz 中表现为机器人位置突然跳变。
+
+#### 解决方法
+- 修改 `src/mrt_description/urdf/gazebo_plugins.xacro`：
+  - DiffDrive 不再发布主 `/robot_1/odom` 和 `/tf`。
+  - DiffDrive 的里程计改为调试用的 `robot_1/wheel_odom` 和 `robot_1/wheel_tf`。
+  - 新增 Gazebo `OdometryPublisher`，用模型真实位姿发布主 `robot_1/odom` 和 `robot_1/tf`。
+  - 降低差速驱动的角速度、角加速度和角 jerk，减少急转时的物理抖动。
+- 修改 `src/mrt_simulation/config/robot_1_slam.yaml`：
+  - 使用 `robot_1/odom`、`robot_1/base_footprint` 和 `/robot_1/scan`。
+  - 关闭 `do_loop_closing`，避免早期建图时因为回环检测造成较大的位姿跳变。
+  - 调整扫描更新频率和最小运动阈值，让建图过程更稳定。
+- 修改 `src/mrt_simulation/launch/robot_1_slam.launch.py`：
+  - SLAM 模式下关闭普通 RViz，单独启动 `robot_1_slam.rviz`。
+  - 关闭 `world -> robot_1/odom` 静态锚点，避免和 SLAM 的 `map -> robot_1/odom` 变换职责混在一起。
+
+#### 验证方法
+
+```bash
+cd /home/aderfd/ros2_multi_robot_task_planner
+source /opt/ros/jazzy/setup.bash
+colcon build --packages-select mrt_description mrt_simulation
+source install/setup.bash
+
+ros2 launch mrt_simulation robot_1_slam.launch.py
+```
+
+预期结果：
+- RViz 中机器人不再频繁闪回。
+- `map -> robot_1/odom` 仍可能有小幅修正，但不应持续拉得很远。
+- 手动建图时地图边界和激光扫描更稳定。
+
+#### 经验总结
+- SLAM 中 `map` 和 `odom` 分离是正常设计，不应该强行让它们永远重合。
+- 如果 `map -> odom` 修正很大，并且机器人在 RViz 中闪回，应优先检查 odom 的发布源和 TF 是否重复。
+- 仿真中做 SLAM 时，轮式 odom 不一定是最稳定的主 odom；如果目标是先验证导航和建图流程，可以用 Gazebo 真实位姿 odom 降低干扰。
+- 狭窄场景里建图应降低速度和角速度，避免激光匹配被急转、打滑和墙面近距离扫描放大误差。

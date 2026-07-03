@@ -115,7 +115,9 @@ def collision_guard_node(namespace):
                 "front_sector_degrees": 46.0,
                 "rear_sector_degrees": 42.0,
                 "publish_rate": 30.0,
-                "cmd_timeout": 0.35,
+                "cmd_timeout": 0.0,
+                "linear_accel_limit": 0.5,
+                "angular_accel_limit": 0.7,
             }
         ],
         remappings=[
