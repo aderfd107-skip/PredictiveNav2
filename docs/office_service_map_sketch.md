@@ -22,13 +22,14 @@ robot_1 / robot_2:
   width: about 0.46m
 ```
 
-通道建议：
+通道建议（2026-07-07 修改后）：
 
 ```text
 main corridor: 1.8m
-secondary corridor: 1.4m - 1.6m
-narrow passage: 0.9m - 1.1m
-door opening: 1.0m - 1.2m
+door opening: 1.5m - 1.7m
+narrow passage (x): 1.25m
+narrow passage (y): 1.25m
+min robot clearance: robot is 0.46m wide, so min passage >= 1.0m
 ```
 
 ## 1. Top-Down Sketch

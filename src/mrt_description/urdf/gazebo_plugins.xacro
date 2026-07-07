@@ -37,14 +37,18 @@
         <min_linear_velocity>-0.35</min_linear_velocity>
         <max_angular_velocity>0.75</max_angular_velocity>
         <min_angular_velocity>-0.75</min_angular_velocity>
-        <max_linear_acceleration>0.8</max_linear_acceleration>
-        <min_linear_acceleration>-1.2</min_linear_acceleration>
-        <max_angular_acceleration>0.9</max_angular_acceleration>
-        <min_angular_acceleration>-0.9</min_angular_acceleration>
-        <max_linear_jerk>6.0</max_linear_jerk>
-        <min_linear_jerk>-6.0</min_linear_jerk>
-        <max_angular_jerk>3.0</max_angular_jerk>
-        <min_angular_jerk>-3.0</min_angular_jerk>
+        <!-- Moderate symmetric linear limits so the DiffDrive controller
+             does not overshoot into reverse when stopping.  Angular is
+             more aggressive because rotation has no "direction reversal"
+             problem. -->
+        <max_linear_acceleration>1.5</max_linear_acceleration>
+        <min_linear_acceleration>-1.5</min_linear_acceleration>
+        <max_angular_acceleration>2.5</max_angular_acceleration>
+        <min_angular_acceleration>-2.5</min_angular_acceleration>
+        <max_linear_jerk>20.0</max_linear_jerk>
+        <min_linear_jerk>-20.0</min_linear_jerk>
+        <max_angular_jerk>30.0</max_angular_jerk>
+        <min_angular_jerk>-30.0</min_angular_jerk>
         <odom_publish_frequency>50</odom_publish_frequency>
         <topic>${robot_name}/cmd_vel_safe</topic>
         <odom_topic>${robot_name}/wheel_odom</odom_topic>

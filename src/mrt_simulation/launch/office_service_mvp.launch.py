@@ -13,6 +13,7 @@ from launch.substitutions import (
     PathJoinSubstitution,
 )
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -78,16 +79,19 @@ def robot_state_publisher_node(
         parameters=[
             {
                 "frame_prefix": f"{namespace}/",
-                "robot_description": robot_description_command(
-                    robot_name,
-                    robot_role,
-                    robot_color,
-                    payload_enabled,
-                    mast_enabled,
-                    camera_enabled,
-                    lidar_x,
-                    lidar_y,
-                    lidar_z,
+                "robot_description": ParameterValue(
+                    robot_description_command(
+                        robot_name,
+                        robot_role,
+                        robot_color,
+                        payload_enabled,
+                        mast_enabled,
+                        camera_enabled,
+                        lidar_x,
+                        lidar_y,
+                        lidar_z,
+                    ),
+                    value_type=str,
                 ),
                 "use_sim_time": True,
             }
@@ -115,9 +119,8 @@ def collision_guard_node(namespace):
                 "front_sector_degrees": 46.0,
                 "rear_sector_degrees": 42.0,
                 "publish_rate": 30.0,
-                "cmd_timeout": 0.0,
-                "linear_accel_limit": 0.5,
-                "angular_accel_limit": 0.7,
+                "cmd_timeout": 0.3,
+                "distance_smooth_alpha": 0.25,
             }
         ],
         remappings=[

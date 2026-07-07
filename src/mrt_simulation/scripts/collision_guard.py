@@ -11,6 +11,20 @@ from sensor_msgs.msg import LaserScan
 
 
 class CollisionGuard(Node):
+    """Pass-through safety node.
+
+    This node does NOT apply its own acceleration / jerk limiting — that
+    is Gazebo DiffDrive's job.  Adding a second layer of rate-limiting
+    here causes the two filters to fight each other, which produces
+    lag, oscillation, and brief direction reversals during teleop.
+
+    Responsibilities kept here:
+      * laser-based speed scaling near obstacles
+      * angular velocity is scaled together with linear so the robot
+        does not pivot in place near walls (the main wobble source)
+      * stale-command timeout (auto-stop when the pilot stops sending)
+    """
+
     def __init__(self):
         super().__init__("collision_guard")
 
@@ -20,8 +34,7 @@ class CollisionGuard(Node):
         self.declare_parameter("rear_sector_degrees", 42.0)
         self.declare_parameter("publish_rate", 30.0)
         self.declare_parameter("cmd_timeout", 0.35)
-        self.declare_parameter("linear_accel_limit", 0.5)
-        self.declare_parameter("angular_accel_limit", 0.7)
+        self.declare_parameter("distance_smooth_alpha", 0.25)
 
         self.stop_distance = self.get_float_parameter("stop_distance")
         self.slow_distance = max(
@@ -30,16 +43,17 @@ class CollisionGuard(Node):
         self.front_sector = math.radians(
             self.get_float_parameter("front_sector_degrees")
         )
-        self.rear_sector = math.radians(self.get_float_parameter("rear_sector_degrees"))
+        self.rear_sector = math.radians(
+            self.get_float_parameter("rear_sector_degrees")
+        )
         self.cmd_timeout = self.get_float_parameter("cmd_timeout")
-        self.linear_accel_limit = self.get_float_parameter("linear_accel_limit")
-        self.angular_accel_limit = self.get_float_parameter("angular_accel_limit")
+        self.distance_alpha = max(
+            0.0, min(1.0, self.get_float_parameter("distance_smooth_alpha"))
+        )
 
         publish_rate = max(self.get_float_parameter("publish_rate"), 1.0)
         self.last_cmd = Twist()
         self.last_cmd_time = None
-        self.last_output = Twist()
-        self.last_output_time = None
         self.front_distance = math.inf
         self.rear_distance = math.inf
 
@@ -57,6 +71,8 @@ class CollisionGuard(Node):
 
     def get_float_parameter(self, name):
         return self.get_parameter(name).get_parameter_value().double_value
+
+    # ----- subscriptions --------------------------------------------------
 
     def on_cmd(self, msg):
         self.last_cmd = copy.deepcopy(msg)
@@ -76,8 +92,35 @@ class CollisionGuard(Node):
                     rear.append(distance)
             angle += msg.angle_increment
 
-        self.front_distance = min(front) if front else math.inf
-        self.rear_distance = min(rear) if rear else math.inf
+        raw_front = min(front) if front else math.inf
+        raw_rear = min(rear) if rear else math.inf
+
+        # Exponential moving average so single-frame laser jitter or a wall
+        # that briefly enters the sector during a turn does not cause speed
+        # to oscillate.
+        if self.distance_alpha <= 0.0:
+            self.front_distance = raw_front
+            self.rear_distance = raw_rear
+        else:
+            # Handle inf → finite transition (e.g. robot approaches a wall
+            # that was previously out of range).
+            if math.isfinite(self.front_distance) and math.isfinite(raw_front):
+                self.front_distance = (
+                    self.distance_alpha * raw_front
+                    + (1.0 - self.distance_alpha) * self.front_distance
+                )
+            else:
+                self.front_distance = raw_front
+
+            if math.isfinite(self.rear_distance) and math.isfinite(raw_rear):
+                self.rear_distance = (
+                    self.distance_alpha * raw_rear
+                    + (1.0 - self.distance_alpha) * self.rear_distance
+                )
+            else:
+                self.rear_distance = raw_rear
+
+    # ----- publisher -------------------------------------------------------
 
     def publish_guarded_cmd(self):
         target_cmd = copy.deepcopy(self.last_cmd)
@@ -85,49 +128,63 @@ class CollisionGuard(Node):
         if self.command_is_stale():
             target_cmd = Twist()
 
-        cmd = self.smooth_cmd(target_cmd)
+        # Pass through directly — NO acceleration limiting.
+        # Gazebo DiffDrive handles all velocity smoothing internally.
+        cmd = copy.deepcopy(target_cmd)
+
+        # Deadband: force near-zero commands to exactly zero so floating-
+        # point noise cannot cause a spurious negative linear velocity
+        # that Gazebo would then act on.
+        if abs(cmd.linear.x) < 1e-4:
+            cmd.linear.x = 0.0
+        if abs(cmd.angular.z) < 1e-4:
+            cmd.angular.z = 0.0
 
         if not self.command_is_stale():
-            cmd.linear.x = self.limit_axis(cmd.linear.x, self.front_distance)
-            cmd.linear.x = -self.limit_axis(-cmd.linear.x, self.rear_distance)
+            cmd = self._apply_laser_safety(cmd)
 
-            if cmd.linear.x == 0.0 and abs(target_cmd.linear.x) > 1e-6:
-                cmd.linear.y = 0.0
+        # Hard clamp: if the pilot did not ask for reverse, never output
+        # reverse — even if laser scaling or numeric noise would produce it.
+        if target_cmd.linear.x >= 0.0 and cmd.linear.x < 0.0:
+            cmd.linear.x = 0.0
+        if target_cmd.linear.x <= 0.0 and cmd.linear.x > 0.0:
+            cmd.linear.x = 0.0
 
-        self.last_output = copy.deepcopy(cmd)
         self.publisher.publish(cmd)
 
-    def smooth_cmd(self, target_cmd):
-        now = self.get_clock().now()
-        if self.last_output_time is None:
-            dt = 1.0 / max(self.get_float_parameter("publish_rate"), 1.0)
-        else:
-            dt = (now - self.last_output_time).nanoseconds * 1e-9
-            dt = max(0.0, min(dt, 0.2))
-        self.last_output_time = now
+    def _apply_laser_safety(self, cmd):
+        """Scale velocities based on closest obstacle in each direction.
 
-        cmd = copy.deepcopy(target_cmd)
-        cmd.linear.x = self.limit_delta(
-            self.last_output.linear.x,
-            target_cmd.linear.x,
-            self.linear_accel_limit * dt,
-        )
-        cmd.angular.z = self.limit_delta(
-            self.last_output.angular.z,
-            target_cmd.angular.z,
-            self.angular_accel_limit * dt,
-        )
+        Both linear *and* angular velocity are scaled by the same factor
+        so the robot does not pivot in place when the laser briefly
+        catches a side wall during a turn or in a narrow passage.
+        """
+        front_scale = self._speed_scale(self.front_distance)
+        rear_scale = self._speed_scale(self.rear_distance)
+
+        if cmd.linear.x > 0.0:
+            cmd.linear.x *= front_scale
+        elif cmd.linear.x < 0.0:
+            cmd.linear.x *= rear_scale
+
+        # Scale angular velocity together with linear so near-wall
+        # slowdown is smooth rather than pivoting.
+        ang_scale = min(front_scale, rear_scale)
+        cmd.angular.z *= ang_scale
+
         return cmd
 
-    def limit_delta(self, current, target, max_delta):
-        if max_delta <= 0.0:
-            return target
-        delta = target - current
-        if delta > max_delta:
-            return current + max_delta
-        if delta < -max_delta:
-            return current - max_delta
-        return target
+    def _speed_scale(self, distance):
+        """Return 0.0 – 1.0 multiplier for a given obstacle distance."""
+        if distance <= self.stop_distance:
+            return 0.0
+        if distance >= self.slow_distance:
+            return 1.0
+        return (distance - self.stop_distance) / (
+            self.slow_distance - self.stop_distance
+        )
+
+    # ----- helpers ----------------------------------------------------------
 
     def command_is_stale(self):
         if self.last_cmd_time is None:
@@ -136,19 +193,6 @@ class CollisionGuard(Node):
             return False
         age = (self.get_clock().now() - self.last_cmd_time).nanoseconds * 1e-9
         return age > self.cmd_timeout
-
-    def limit_axis(self, velocity, distance):
-        if velocity <= 0.0:
-            return velocity
-        if distance <= self.stop_distance:
-            return 0.0
-        if distance >= self.slow_distance:
-            return velocity
-
-        scale = (distance - self.stop_distance) / (
-            self.slow_distance - self.stop_distance
-        )
-        return velocity * max(0.0, min(1.0, scale))
 
 
 def main():
