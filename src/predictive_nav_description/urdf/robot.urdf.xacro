@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<robot name="$(arg robot_name)" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:arg name="robot_name" default="predictive_nav_robot"/>
+  <xacro:arg name="robot_color" default="predictive_nav_blue"/>
+  <xacro:arg name="use_gazebo_plugins" default="false"/>
+  <xacro:arg name="lidar_x" default="0.22"/>
+  <xacro:arg name="lidar_y" default="0"/>
+  <xacro:arg name="lidar_z" default="0.045"/>
+
+  <xacro:include filename="$(find predictive_nav_description)/urdf/materials.xacro"/>
+  <xacro:include filename="$(find predictive_nav_description)/urdf/inertials.xacro"/>
+  <xacro:include filename="$(find predictive_nav_description)/urdf/base.xacro"/>
+  <xacro:include filename="$(find predictive_nav_description)/urdf/wheels.xacro"/>
+  <xacro:include filename="$(find predictive_nav_description)/urdf/sensors.xacro"/>
+  <xacro:include filename="$(find predictive_nav_description)/urdf/gazebo_plugins.xacro"/>
+
+  <xacro:predictive_nav_base robot_color="$(arg robot_color)"/>
+  <xacro:predictive_nav_wheels/>
+  <xacro:predictive_nav_lidar x="$(arg lidar_x)" y="$(arg lidar_y)" z="$(arg lidar_z)"/>
+  <xacro:predictive_nav_imu/>
+
+  <xacro:if value="$(arg use_gazebo_plugins)">
+    <xacro:predictive_nav_gazebo_plugins topic_prefix="$(arg robot_name)"/>
+  </xacro:if>
+</robot>

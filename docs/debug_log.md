@@ -122,7 +122,7 @@ ros2 topic echo /robot_1/cmd_vel_safe
 编译并 source：
 
 ```bash
-cd /home/aderfd/ros2_multi_robot_task_planner
+cd /home/aderfd/PredictiveNav2
 source /opt/ros/jazzy/setup.bash
 colcon build --packages-select mrt_description mrt_simulation
 source install/setup.bash
@@ -213,7 +213,7 @@ ros2 run tf2_ros tf2_echo robot_1/odom robot_1/base_footprint
 #### 验证方法
 
 ```bash
-cd /home/aderfd/ros2_multi_robot_task_planner
+cd /home/aderfd/PredictiveNav2
 source /opt/ros/jazzy/setup.bash
 colcon build --packages-select mrt_description mrt_simulation
 source install/setup.bash

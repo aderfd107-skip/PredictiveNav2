@@ -5,7 +5,7 @@
 ## 1. 编译并加载环境
 
 ```bash
-cd /home/aderfd/ros2_multi_robot_task_planner
+cd /home/aderfd/PredictiveNav2
 source /opt/ros/jazzy/setup.bash
 colcon build --packages-select mrt_description mrt_simulation
 source install/setup.bash
@@ -39,7 +39,7 @@ ros2 launch mrt_simulation office_service_mvp.launch.py use_rviz:=false
 另开一个终端：
 
 ```bash
-cd /home/aderfd/ros2_multi_robot_task_planner
+cd /home/aderfd/PredictiveNav2
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
@@ -236,7 +236,7 @@ docs/debug_log.md
 启动 robot_1 SLAM：
 
 ```bash
-cd /home/aderfd/ros2_multi_robot_task_planner
+cd /home/aderfd/PredictiveNav2
 source /opt/ros/jazzy/setup.bash
 colcon build --packages-select mrt_description mrt_simulation
 source install/setup.bash

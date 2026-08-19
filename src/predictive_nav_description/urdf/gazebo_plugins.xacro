@@ -1,0 +1,118 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:macro name="predictive_nav_gazebo_plugins" params="topic_prefix:=nav_robot odom_frame:=odom base_frame:=base_footprint">
+    <gazebo reference="base_link">
+      <material>Gazebo/Blue</material>
+    </gazebo>
+
+    <gazebo reference="left_wheel_link">
+      <mu1>3.0</mu1>
+      <mu2>3.0</mu2>
+    </gazebo>
+
+    <gazebo reference="right_wheel_link">
+      <mu1>3.0</mu1>
+      <mu2>3.0</mu2>
+    </gazebo>
+
+    <gazebo reference="front_caster_link">
+      <mu1>0.08</mu1>
+      <mu2>0.08</mu2>
+    </gazebo>
+
+    <gazebo reference="rear_caster_link">
+      <mu1>0.08</mu1>
+      <mu2>0.08</mu2>
+    </gazebo>
+
+    <!-- Gazebo Harmonic actuator and sensor configuration. -->
+    <gazebo>
+      <plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
+        <left_joint>left_wheel_joint</left_joint>
+        <right_joint>right_wheel_joint</right_joint>
+        <wheel_separation>0.51</wheel_separation>
+        <wheel_radius>0.08</wheel_radius>
+        <max_linear_velocity>0.45</max_linear_velocity>
+        <min_linear_velocity>-0.35</min_linear_velocity>
+        <max_angular_velocity>0.75</max_angular_velocity>
+        <min_angular_velocity>-0.75</min_angular_velocity>
+        <!-- Moderate symmetric linear limits so the DiffDrive controller
+             does not overshoot into reverse when stopping.  Angular is
+             more aggressive because rotation has no "direction reversal"
+             problem. -->
+        <max_linear_acceleration>1.5</max_linear_acceleration>
+        <min_linear_acceleration>-1.5</min_linear_acceleration>
+        <max_angular_acceleration>2.5</max_angular_acceleration>
+        <min_angular_acceleration>-2.5</min_angular_acceleration>
+        <max_linear_jerk>20.0</max_linear_jerk>
+        <min_linear_jerk>-20.0</min_linear_jerk>
+        <max_angular_jerk>30.0</max_angular_jerk>
+        <min_angular_jerk>-30.0</min_angular_jerk>
+        <odom_publish_frequency>50</odom_publish_frequency>
+        <topic>${topic_prefix}/cmd_vel_safe</topic>
+        <odom_topic>${topic_prefix}/wheel_odom</odom_topic>
+        <tf_topic>${topic_prefix}/wheel_tf</tf_topic>
+        <frame_id>${odom_frame}</frame_id>
+        <child_frame_id>${base_frame}</child_frame_id>
+      </plugin>
+
+      <plugin
+        filename="gz-sim-odometry-publisher-system"
+        name="gz::sim::systems::OdometryPublisher">
+        <dimensions>2</dimensions>
+        <odom_frame>${odom_frame}</odom_frame>
+        <robot_base_frame>${base_frame}</robot_base_frame>
+        <child_frame_id>${base_frame}</child_frame_id>
+        <odom_topic>${topic_prefix}/odom</odom_topic>
+        <tf_topic>${topic_prefix}/tf</tf_topic>
+        <odom_publish_frequency>50</odom_publish_frequency>
+      </plugin>
+
+      <plugin
+        filename="gz-sim-joint-state-publisher-system"
+        name="gz::sim::systems::JointStatePublisher">
+        <joint_name>left_wheel_joint</joint_name>
+        <joint_name>right_wheel_joint</joint_name>
+      </plugin>
+    </gazebo>
+
+    <gazebo reference="lidar_link">
+      <sensor name="${topic_prefix}_lidar" type="gpu_lidar">
+        <pose>0 0 0 0 0 0</pose>
+        <topic>${topic_prefix}/scan</topic>
+        <gz_frame_id>lidar_link</gz_frame_id>
+        <update_rate>10</update_rate>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>720</samples>
+              <resolution>1</resolution>
+              <min_angle>-3.14159</min_angle>
+              <max_angle>3.14159</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.08</min>
+            <max>12.0</max>
+            <resolution>0.01</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.01</stddev>
+          </noise>
+        </lidar>
+        <always_on>true</always_on>
+        <visualize>true</visualize>
+      </sensor>
+    </gazebo>
+
+    <gazebo reference="imu_link">
+      <sensor name="${topic_prefix}_imu" type="imu">
+        <topic>${topic_prefix}/imu</topic>
+        <update_rate>50</update_rate>
+        <always_on>true</always_on>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+</robot>

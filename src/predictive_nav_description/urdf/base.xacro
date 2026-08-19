@@ -1,0 +1,98 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:macro name="predictive_nav_base" params="robot_color:=predictive_nav_blue">
+    <link name="base_footprint"/>
+
+    <joint name="base_footprint_joint" type="fixed">
+      <parent link="base_footprint"/>
+      <child link="base_link"/>
+      <origin xyz="0 0 0.095" rpy="0 0 0"/>
+    </joint>
+
+    <link name="base_link">
+      <visual>
+        <origin xyz="0 0 0.02" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.62 0.46 0.18"/>
+        </geometry>
+        <material name="${robot_color}"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0.02" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.62 0.46 0.18"/>
+        </geometry>
+      </collision>
+      <xacro:predictive_nav_box_inertia mass="16.0" x="0.62" y="0.46" z="0.18"/>
+    </link>
+
+    <link name="top_deck_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.56 0.40 0.035"/>
+        </geometry>
+        <material name="predictive_nav_dark_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.56 0.40 0.035"/>
+        </geometry>
+      </collision>
+      <xacro:predictive_nav_box_inertia mass="1.0" x="0.56" y="0.40" z="0.035"/>
+    </link>
+
+    <joint name="top_deck_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="top_deck_link"/>
+      <origin xyz="0 0 0.128" rpy="0 0 0"/>
+    </joint>
+
+    <link name="front_bumper_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.04 0.44 0.09"/>
+        </geometry>
+        <material name="predictive_nav_dark_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.04 0.44 0.09"/>
+        </geometry>
+      </collision>
+      <xacro:predictive_nav_box_inertia mass="0.8" x="0.04" y="0.44" z="0.09"/>
+    </link>
+
+    <joint name="front_bumper_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="front_bumper_link"/>
+      <origin xyz="0.335 0 0.02" rpy="0 0 0"/>
+    </joint>
+
+    <link name="rear_bumper_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.035 0.42 0.08"/>
+        </geometry>
+        <material name="predictive_nav_dark_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.035 0.42 0.08"/>
+        </geometry>
+      </collision>
+      <xacro:predictive_nav_box_inertia mass="0.6" x="0.035" y="0.42" z="0.08"/>
+    </link>
+
+    <joint name="rear_bumper_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="rear_bumper_link"/>
+      <origin xyz="-0.335 0 0.02" rpy="0 0 0"/>
+    </joint>
+  </xacro:macro>
+</robot>

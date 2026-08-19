@@ -1,0 +1,53 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:macro name="predictive_nav_lidar" params="x:=0.22 y:=0 z:=0.045">
+    <link name="lidar_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <cylinder radius="0.055" length="0.055"/>
+        </geometry>
+        <material name="predictive_nav_lidar"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <cylinder radius="0.055" length="0.055"/>
+        </geometry>
+      </collision>
+      <xacro:predictive_nav_cylinder_inertia_z mass="0.25" radius="0.055" length="0.055"/>
+    </link>
+
+    <joint name="lidar_joint" type="fixed">
+      <parent link="top_deck_link"/>
+      <child link="lidar_link"/>
+      <origin xyz="${x} ${y} ${z}" rpy="0 0 0"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:macro name="predictive_nav_imu">
+    <link name="imu_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.05 0.04 0.02"/>
+        </geometry>
+        <material name="predictive_nav_black"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.05 0.04 0.02"/>
+        </geometry>
+      </collision>
+      <xacro:predictive_nav_box_inertia mass="0.08" x="0.05" y="0.04" z="0.02"/>
+    </link>
+
+    <joint name="imu_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="imu_link"/>
+      <origin xyz="0 0 0.125" rpy="0 0 0"/>
+    </joint>
+  </xacro:macro>
+
+</robot>
