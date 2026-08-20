@@ -318,5 +318,62 @@
         <visual name="visual"><geometry><cylinder><radius>0.10</radius><length>0.025</length></cylinder></geometry><material><ambient>1.0 0.55 0.05 1</ambient><diffuse>1.0 0.55 0.05 1</diffuse></material></visual>
       </link>
     </model>
+
+    <!--
+      Dynamic-obstacle evaluation actor.
+
+      This model is deliberately absent from the saved static map.  Its pose is
+      driven by dynamic_obstacle_controller.py through Gazebo's set_pose
+      service, so it appears in the LiDAR / local costmap but does not alter
+      AMCL's known-map reference.  The route at x=2.25 crosses the open lower
+      laboratory passage used by goals sent from the charging area to the west.
+    -->
+    <model name="dynamic_obstacle_actor">
+      <static>true</static>
+      <pose>2.25 -3.70 0.475 0 0 1.5708</pose>
+      <link name="base_link">
+        <collision name="collision">
+          <geometry><box><size>0.45 0.45 0.95</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.45 0.45 0.95</size></box></geometry>
+          <material>
+            <ambient>0.95 0.20 0.08 1</ambient>
+            <diffuse>0.95 0.20 0.08 1</diffuse>
+            <specular>0.15 0.15 0.15 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Central corridor actor: horizontal motion inside the open main aisle. -->
+    <model name="dynamic_obstacle_center_actor">
+      <static>true</static>
+      <pose>-1.60 0.00 0.475 0 0 0</pose>
+      <link name="base_link">
+        <collision name="collision">
+          <geometry><box><size>0.42 0.42 0.95</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.42 0.42 0.95</size></box></geometry>
+          <material><ambient>0.95 0.20 0.08 1</ambient><diffuse>0.95 0.20 0.08 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Upper-right actor: covers goals inside the north-east room. -->
+    <model name="dynamic_obstacle_upper_actor">
+      <static>true</static>
+      <pose>2.20 2.20 0.475 0 0 0</pose>
+      <link name="base_link">
+        <collision name="collision">
+          <geometry><box><size>0.42 0.42 0.95</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.42 0.42 0.95</size></box></geometry>
+          <material><ambient>0.95 0.20 0.08 1</ambient><diffuse>0.95 0.20 0.08 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
   </world>
 </sdf>

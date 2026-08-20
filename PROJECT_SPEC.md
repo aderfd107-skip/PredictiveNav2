@@ -1,6 +1,6 @@
 # PredictiveNav2 — 项目总体规格
 
-> **唯一总体设计依据。** 本文档基于 2026-08-17 对当前工作区的实际审查编写。文中明确标记的 `Not Started` 项目不是现有功能；后续核心实现、重构和 README 均以本文为准。实现与设计不一致时，必须先更新本文并记录原因。
+> **唯一总体设计依据。** 本文档基于工作区实际状态维护，最近一次状态同步为 **2026-08-20**。文中明确标记的 `Not Started` 项目不是现有功能；后续核心实现、重构和 README 均以本文为准。实现与设计不一致时，必须先更新本文并记录原因。
 
 ## 1. 项目定位与边界
 
@@ -27,28 +27,28 @@
 
 ### 2.1 实际目录与构建状态
 
-当前工作区有三个 `ament_cmake` 基础包：`predictive_nav_description`、`predictive_nav_simulation` 与 `predictive_nav_bringup`。后者已提供并验证 AMCL + DWB 静态导航 baseline。没有动态导航核心所需的 C++ 源码、测试目录、消息定义、障碍物检测、跟踪、预测、风险或 Nav2 plugin 实现。
+当前工作区有三个 `ament_cmake` 基础包：`predictive_nav_description`、`predictive_nav_simulation` 与 `predictive_nav_bringup`。后者已提供 AMCL + DWB 已知地图静态导航 baseline。`predictive_nav_simulation` 已包含三个可控 Gazebo 动态 actor；它们通过 ROS–Gazebo `set_pose` 服务运动，并被 `/scan` 实际观测到。尚没有动态导航核心所需的 C++ 源码、测试目录、消息定义、障碍物检测、跟踪、预测、风险或 Nav2 plugin 实现。
 
-已于本次审查执行：
+初始审查（2026-08-17）曾执行：
 
 ```bash
 source /opt/ros/jazzy/setup.bash
 colcon build --packages-select predictive_nav_description predictive_nav_simulation
 ```
 
-结果为两个现有包均构建成功。环境是 ROS 2 **Jazzy**，而非旧文档中提及的 Humble。当前系统已安装 `nav2_mppi_controller`；本机头文件确认它可通过 `mppi::critics::CriticFunction::initialize()` 和 `score(mppi::CriticData&)` 扩展 Critic，因此首选该路径。
+当时两个基础包均构建成功。此后已加入 `predictive_nav_bringup` 和动态 actor 控制节点；2026-08-20 重新构建 `predictive_nav_simulation` 与 `predictive_nav_bringup` 已通过。环境是 ROS 2 **Jazzy**，而非旧文档中提及的 Humble。当前系统已安装 `nav2_mppi_controller`；本机头文件确认它可通过 `mppi::critics::CriticFunction::initialize()` 和 `score(mppi::CriticData&)` 扩展 Critic，因此首选该路径。
 
 ### 2.2 当前已实现功能（非规划）
 
 | 分类 | 实际内容 | 状态 |
 |---|---|---|
 | 机器人模型 | 差速底盘、轮子、2D LiDAR、IMU、可选摄像头外观、可选货箱/传感器杆 | Implemented |
-| Gazebo 仿真 | `dynamic_navigation_lab.sdf` 静态实验场景、单自车 spawn、Gazebo Harmonic 插件 | Implemented |
-| ROS 接口 | `/robot_{1,2}/scan`、`/odom`、`/imu`、`/joint_states`、`/tf`、`/cmd_vel` 桥接 | Implemented，尚未为单机器人研究场景整理 |
-| 可视化 | RViz、SDF 静态模型 Marker 发布器 | Implemented |
+| Gazebo 仿真 | `dynamic_navigation_lab.sdf`、单自车 spawn、Gazebo Harmonic 插件、3 个可复位动态 actor | Implemented |
+| ROS 接口 | 根话题 `/scan`、`/odom`、`/imu`、`/joint_states`、`/tf`、`/cmd_vel`，以及 `/cmd_vel_safe` 执行链路 | Implemented |
+| 可视化 | Nav2 RViz、SDF 静态模型 Marker、动态 actor 的真值调试 Marker | Implemented |
 | 基础安全过滤 | Python `scan_safety_guard.py` 按 LaserScan 最小距离限速 | Implemented，但不是预测风险算法 |
 | SLAM | 通用 `mapping.launch.py`、已保存 PGM/YAML 地图 | Implemented，仅作地图制作/调试 |
-| 动态障碍物 | 无移动 actor、无检测、无跟踪、无预测 | Not Started |
+| 动态障碍物 | 3 个固定路线的可控 actor；无检测、无跟踪、无预测 | Actor Implemented；算法 Not Started |
 | Nav2 导航 | AMCL + DWB 已知地图 baseline、初始位姿确认、Nav2 Goal RViz 工具与受控启动等待；直接启动 Nav2 节点，不依赖缺失的 `nav2_bringup` | Implemented（已完成单目标端到端仿真验证） |
 | Benchmark / 测试 | 无自动实验、CSV/JSON 记录、单元测试或集成测试 | Not Started |
 
@@ -62,7 +62,7 @@ colcon build --packages-select predictive_nav_description predictive_nav_simulat
 | IMPLEMENTED | `predictive_nav_description`、单一 `display.launch.py`、RViz | 已统一为中性单机器人显示与标准 frame/topic。 |
 | REMOVED | 可选载荷、角色外观、重复显示 launch 与角色参数 | 已删除；它们不属于动态预测导航。 |
 | KEEP | `dynamic_navigation_lab.sdf` 的墙体、走廊、窄通道、基础静态家具布局 | 已保留并改为中性动态导航实验场景。 |
-| IMPLEMENTED | `predictive_nav_simulation`、实验 launch、地图/RViz/marker 脚本 | 已收敛为单自车与标准根话题接口；动态 actor 仍未实现。 |
+| IMPLEMENTED | `predictive_nav_simulation`、实验 launch、地图/RViz/marker 脚本 | 已收敛为单自车与标准根话题接口；三个动态 actor 默认关闭，仅在动态试验显式启用。 |
 | IMPLEMENTED | `mapping.launch.py`、`mapping.yaml`、现有 PGM/YAML | 已改为通用地图制作工具，使用 `odom`、`base_footprint` 与 `/scan`。 |
 | REFACTOR | `scan_safety_guard.py` | 保留为可关闭的手动仿真急停层；MPPI benchmark 不应依赖它。 |
 | REMOVED | 旧业务规划文档与无引用 TF 快照 | 已删除。 |
@@ -72,8 +72,9 @@ colcon build --packages-select predictive_nav_description predictive_nav_simulat
 
 ### 2.4 已发现的工程风险
 
-- 现有 Gazebo launch 同时为两台车设置 `world → robot_i/odom` 静态锚点，SLAM launch 通过参数关闭它；这种双模式必须拆成显式的 sim-localization 与 mapping launch，避免 TF 发布者混淆。
-- 现有 `/robot_i/odom` 来自 Gazebo 真值 OdometryPublisher；它适合稳定的仿真基线，但不应被误称为真实机器人里程计。wheel odom 仍仅为调试话题。
+- 已知地图导航时，AMCL 是唯一的 `map → odom` 发布者；不得同时启用 `world → odom` static anchor，否则 `odom` 会拥有两个父 frame，造成激光、定位和控制错位。mapping launch 与 nav baseline 已分别显式处理该开关。
+- 当前 `/odom` 来自 Gazebo 真值 OdometryPublisher；它适合稳定的仿真基线，但不应被误称为真实机器人里程计。wheel odom 仍仅为调试话题。
+- 动态 actor 通过 Gazebo `set_pose` 作运动学控制，且其 RViz 真值 Marker 只用于调试。感知、跟踪、预测和 Critic 严禁订阅该真值话题，必须只从 `/scan` 和 TF/odom 推导障碍物状态。
 - `scan_safety_guard.py` 的 LaserScan 回调与 timer 共享距离/速度状态，没有明确数据一致性设计；在单线程 executor 中通常可用，但不可作为实时导航关键安全架构。
 - launch、URDF、脚本中有重复的机器人描述构造逻辑和旧命名，重命名需要一次性处理路径、包依赖、`FindPackageShare`、xacro `find`、安装规则和 docs。
 
@@ -263,7 +264,7 @@ J=w_{path}J_{path}+w_{goal}J_{goal}+w_{static}J_{static}+J_{dynamic}+J_{ttc}
 
 ### 7.1 场景
 
-保留现有办公室几何并重命名后，新增可参数化的 Gazebo dynamic-actor/轨迹脚本，而不是复用自车模型伪装成人。最低场景集：
+当前办公室几何已保留，并已实现三个基础 actor 路线：下方通道竖直横穿、中央主通道水平横穿、右上房间水平横穿。它们用于开发期的传感器、检测和跟踪验证；静态 baseline 默认关闭 actor，动态试验显式启用。下一阶段要将 actor 数量、初始状态、路线、速度、机器人起终点与持续时间 YAML 化，形成以下最低 benchmark 场景集：
 
 1. 单动态障碍物横穿全局路径；
 2. 自车与动态障碍物迎面；
@@ -316,7 +317,7 @@ robot_localization       wheel odom + IMU → 滤波 odom / TF
 |---|---|
 | 仓库审查与本规格 | Implemented |
 | 命名/第一轮结构重构 | Tested |
-| 单机器人动态仿真场景 | Not Started |
+| 单机器人动态仿真场景 | Implemented（3 个 actor 已完成最小运行与 `/scan` 观测验证；尚未 YAML 化和自动化） |
 | LiDAR 聚类 | Not Started |
 | 多目标跟踪 + CV KF | Not Started |
 | 轨迹预测 | Not Started |
@@ -333,7 +334,7 @@ robot_localization       wheel odom + IMU → 滤波 odom / TF
 2. **完成：** 已合并显示 launch，去除业务角色、双机器人默认 spawn 与未使用外观代码。
 3. **完成：** 已将世界、地图、RViz、SLAM 工具和运行文档改成中性动态导航实验命名，并保留单自车 LiDAR/IMU/TF/odom 链路。
 4. **完成：** 已删除已确认无关文档和无引用生成 TF 快照；下一步重新构建并验证重命名包。
-5. 先建立 `predictive_nav_msgs` 与 perception 的独立测试，再依赖顺序实现 tracking、prediction、Nav2 baseline、Critic、benchmark。
+5. 先建立 `predictive_nav_msgs` 与 perception 的独立测试，再依赖顺序实现 tracking、prediction、原版 MPPI baseline、Critic、benchmark。
 
 在第 1–4 步完成并构建验证前，不创建平行旧/新包，不实现新的核心算法，也不删除任何尚未验证引用关系的内容。
 
@@ -344,6 +345,8 @@ robot_localization       wheel odom + IMU → 滤波 odom / TF
 **2026-08-19 — 远端历史整合。** 将远端新增提交 rebase 到当前分支后，确认其 `inspection_core` 包仅包含多机器人 A*/任务规划代码，且无其他包引用；已从源码树移除以保持项目边界。根据用户要求，`docs/inspection_core_explained.md` 及其他既有文档保留为历史资料，不删除。
 
 **2026-08-19 — DWB 静态导航 baseline 实施与最小验证完成。** 基于已有 `scan`、`odom`、TF 与静态地图，新建 `predictive_nav_bringup`，加入 `nav_baseline.launch.py`、AMCL + DWB 参数、导航 RViz 和等待 map/scan 后确认 AMCL 收敛的初始位姿节点。运行时直接启动 Nav2 lifecycle nodes，不依赖未随当前 Jazzy `navigation2` 元包安装的 `nav2_bringup`。验证：三个包构建及 launch 参数加载通过；两套 lifecycle manager 均报告受管节点 Active；在 Gazebo 中向 `NavigateToPose` 发送 `(5.8, -2.5)`，机器人从约 `(5.76, -3.80)` 行驶至约 `(5.81, -2.69)`，动作返回 `SUCCEEDED`、零 recovery。该状态仅表示 DWB 的最小端到端运行已存在；三目标回归、原版 MPPI、动态算法和 benchmark 仍未实现。
+
+**2026-08-20 — 动态 actor 场景实现与规格同步。** 在现有静态地图之外加入三个可控橙色方块，覆盖下方、中央和右上通行区域；每个 actor 可通过 ROS 2 服务 start/stop/reset，并由 Gazebo `set_pose` 运动学控制。验证：三个 actor 的模型与控制节点均构建通过；单 actor 运行时确认 set_pose 服务连接成功、位姿随时间改变，且 `/scan` 中的红色激光点随其移动。RViz 的半透明真值框只用于核对场景，严格不作为算法输入。本次同步将过时的双机器人接口、无 actor 表述和 TF 风险替换为当前实际状态；LiDAR 聚类、跟踪、预测、原版 MPPI、DynamicRiskCritic 与 benchmark 仍为 `Not Started`。
 
 ## 11. 最终 README 应包含
 

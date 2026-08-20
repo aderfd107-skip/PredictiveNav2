@@ -26,6 +26,46 @@ ros2 launch predictive_nav_bringup nav_baseline.launch.py
 
 该 baseline 只用于静态回归和后续对照；不得将临时 `scan_safety_guard` 的行为计入 DynamicRiskCritic 效果。
 
+## 可控动态障碍物试验
+
+静态 baseline 默认**不启动**动态障碍物，以便保留可重复的对照条件。要运行动态试验，使用：
+
+```bash
+ros2 launch predictive_nav_bringup nav_baseline.launch.py enable_dynamic_obstacle:=true
+```
+
+启动后，三个橙色方块会覆盖不同的常用区域；它们都不写入静态地图，但会出现在
+`/scan` 和 Nav2 的局部代价地图。
+
+| Actor | 路线 | 速度 | 覆盖目的 |
+|---|---|---:|---|
+| `dynamic_obstacle_actor` | `(2.25, -3.70)` ↔ `(2.25, -2.00)` | 0.35 m/s | 充电区前往西侧的下方通道 |
+| `dynamic_obstacle_center_actor` | `(-1.60, 0.00)` ↔ `(1.20, 0.00)` | 0.30 m/s | 中央主通道 |
+| `dynamic_obstacle_upper_actor` | `(2.20, 2.20)` ↔ `(5.40, 2.20)` | 0.28 m/s | 右上房间与北侧目标 |
+
+控制接口：
+
+```bash
+ros2 service call /dynamic_obstacle_controller/stop std_srvs/srv/Trigger "{}"
+ros2 service call /dynamic_obstacle_controller/start std_srvs/srv/Trigger "{}"
+ros2 service call /dynamic_obstacle_controller/reset std_srvs/srv/Trigger "{}"
+ros2 service call /dynamic_obstacle_center_controller/stop std_srvs/srv/Trigger "{}"
+ros2 service call /dynamic_obstacle_center_controller/start std_srvs/srv/Trigger "{}"
+ros2 service call /dynamic_obstacle_center_controller/reset std_srvs/srv/Trigger "{}"
+ros2 service call /dynamic_obstacle_upper_controller/stop std_srvs/srv/Trigger "{}"
+ros2 service call /dynamic_obstacle_upper_controller/start std_srvs/srv/Trigger "{}"
+ros2 service call /dynamic_obstacle_upper_controller/reset std_srvs/srv/Trigger "{}"
+```
+
+每个 `reset` 都把对应障碍物放回起点；每次 benchmark 前依次调用三条 `reset`，就能让不同方法从相同
+障碍物初始状态开始。当前是通过 Gazebo 的 `set_pose` 作运动学控制的测试 actor，
+适合激光检测、跟踪和预测开发；它不是人体行为模型，也不用于评估碰撞动力学。
+
+RViz 不渲染 Gazebo 的橙色模型本体。它显示传感器数据：`/scan` 中随 actor 移动的
+红色点才是算法应使用的观测。为便于检查场景，RViz 还显示
+`/dynamic_obstacle/ground_truth_marker` 的半透明橙色框；这只表示 Gazebo 真值，
+**严禁**作为检测、跟踪或预测节点的输入。后续 C++ 检测节点将用单独颜色和话题显示结果。
+
 ## 最小验证记录
 
 2026-08-19：三包构建和启动参数加载通过；定位与导航 lifecycle manager 均进入 Active。对 `(5.8, -2.5)` 的 `NavigateToPose` 请求返回 `SUCCEEDED`，零 recovery。这是单目标 smoke test，不替代本页要求的三目标静态回归。

@@ -1,6 +1,6 @@
 # PredictiveNav2 项目进度
 
-> **最后更新：2026-08-19**
+> **最后更新：2026-08-20**
 >
 > 本文件记录项目“实际已经完成并验证的内容”，不把设计目标当作既有功能。后续每次对项目做实质修改时，应同步更新“当前状态”和“变更记录”。完整技术设计见 [PROJECT_SPEC.md](PROJECT_SPEC.md)。
 
@@ -23,7 +23,7 @@ PredictiveNav2 最终要实现：机器人用 2D LiDAR 发现并跟踪动态障�
 | Gazebo 场景与静态地图 | 已完成 | 单机器人室内实验场景、地图和 ROS-Gazebo bridge。 |
 | 基础激光安全过滤 | 已完成 | `scan_safety_guard.py` 对近距离障碍限速/停车；它不是预测风险算法。 |
 | AMCL + Nav2 DWB 静态导航 | 已完成 | 已知地图定位、全局规划、DWB 局部控制、RViz 发导航目标。 |
-| 动态障碍物 actor | 未开始 | 当前场景中没有可控移动障碍物。 |
+| 动态障碍物 actor | 已完成 | 3 个可复位 Gazebo 方块，覆盖下方、中央、右上通道，可由 ROS 2 服务启停。 |
 | LiDAR 聚类/动态目标检测 | 未开始 | 尚未从 `/scan` 输出障碍物观测。 |
 | 多目标跟踪与 CV 卡尔曼滤波 | 未开始 | 尚无轨迹 ID、速度或协方差估计。 |
 | 轨迹预测 | 未开始 | 尚无未来位置和不确定性预测消息。 |
@@ -96,6 +96,34 @@ ros2 launch predictive_nav_bringup nav_baseline.launch.py
 - 根因：`nav_baseline.launch.py` 启用 `world → odom` static anchor 的同时，AMCL 发布 `map → odom`；同一 `odom` 因而具有两个父 frame，导致地图定位、激光显示和控制轨迹错位。
 - 修复：已知地图 AMCL 基线关闭 world odom anchor，仅保留 `map → odom → base_footprint`。
 - 影响：必须重启 launch 后生效；独立 Gazebo 展示仍可使用 simulation launch 的默认 world anchor。
+
+### 2026-08-20 — 补充动态预测前的坐标系学习笔记
+
+- 在 `docs/ros2_navigation_learning_notes.md` 补充：为什么跨帧激光必须从 `lidar_link` 转到 `odom`、为什么首版短期 tracking 使用连续的 `odom` 而非直接在 `map` 中估速，以及 DWB 当前避障与未来轨迹预测的边界。
+- 明确澄清：`map` 是固定全局 frame；AMCL 修正的是 `map → odom`，其不连续变化可能使转换后的全局目标坐标跳变，不能误当成障碍物自身运动。
+
+### 2026-08-20 — 加入可控动态障碍物实验 actor
+
+- 在 `dynamic_navigation_lab.sdf` 中加入橙色方块 `dynamic_obstacle_actor`，尺寸为 `0.45 × 0.45 × 0.95 m`。该模型不属于已保存的静态地图，因此不会破坏 AMCL 的地图匹配基准。
+- 新增 `dynamic_obstacle_controller.py`：通过 `ros_gz_bridge` 的 `/world/dynamic_navigation_lab/set_pose` 服务，以 `0.35 m/s` 在 `(2.25, -3.70)` 与 `(2.25, -2.00)` 之间往返；提供 `/dynamic_obstacle_controller/start`、`/stop`、`/reset` 服务。
+- 静态 baseline 与 mapping 默认关闭该 actor；动态试验通过 `enable_dynamic_obstacle:=true` 显式启用，避免污染静态对照组。
+- 验证：`predictive_nav_simulation` 构建通过；运行中 Gazebo set_pose bridge 成功连接，模型 3 秒内从 `y=-2.4025` 移至 `y=-3.6300`，控制服务与 `/scan` 均已出现。
+
+### 2026-08-20 — 加入动态 actor 的 RViz 真值调试覆盖层
+
+- `dynamic_obstacle_controller.py` 在 `/dynamic_obstacle/ground_truth_marker` 发布半透明橙色框，坐标在 `odom`，仅用于核对 Gazebo actor 与激光观测是否一致。
+- 默认 RViz 加入该 Marker 显示；红色 `/scan` 点仍是后续算法唯一允许使用的传感器观测，真值话题明确禁止接入检测、跟踪和预测逻辑。
+
+### 2026-08-20 — 扩展为三条动态障碍物路线
+
+- 新增 `dynamic_obstacle_center_actor` 与 `dynamic_obstacle_upper_actor`，与原下方通道 actor 分别覆盖中央主通道、右上房间和下方通道，避免机器人选择不同目标时没有动态场景可测。
+- 控制节点参数化 actor 名称；三个 actor 各自拥有独立的 start/stop/reset 服务，并在同一个 RViz 真值 Marker 话题中以独立 namespace 发布方框。
+- 静态 baseline 默认仍关闭全部 actor；动态试验一次启用三者。
+
+### 2026-08-20 — 同步项目总体规格
+
+- 更新 `PROJECT_SPEC.md` 的代码库审查、动态场景、ROS 接口、TF 风险和实施状态，使其与当前单机器人、3 个动态 actor、AMCL + DWB baseline 的实际状态一致。
+- 明确仍未实现的边界：C++ LiDAR 聚类、跟踪、预测、原版 MPPI、DynamicRiskCritic 和自动化 benchmark 均保持 `Not Started`，没有因场景完成而被提前标记。
 
 ### 后续记录格式
 

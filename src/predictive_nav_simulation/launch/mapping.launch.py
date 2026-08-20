@@ -45,7 +45,11 @@ def generate_launch_description():
         DeclareLaunchArgument("mapping_params_file", default_value=mapping_params),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(simulation_launch),
-            launch_arguments={"use_rviz": "false", "use_world_odom_anchor": "false"}.items(),
+            launch_arguments={
+                "use_rviz": "false",
+                "use_world_odom_anchor": "false",
+                "enable_dynamic_obstacle": "false",
+            }.items(),
         ),
         slam_node,
         configure,

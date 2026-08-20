@@ -7,6 +7,7 @@ Panels:
         - /Global Options1
         - /Map1
         - /LaserScan1
+        - /Gazebo Ground Truth (Debug)1
       Splitter Ratio: 0.5
     Tree Height: 450
   - Class: nav2_rviz_plugins/Navigation 2
@@ -33,6 +34,11 @@ Visualization Manager:
       Style: Points
       Topic:
         Value: /scan
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: Gazebo Ground Truth (Debug)
+      Topic:
+        Value: /dynamic_obstacle/ground_truth_marker
     - Class: rviz_default_plugins/Path
       Color: 25; 255; 0
       Enabled: true

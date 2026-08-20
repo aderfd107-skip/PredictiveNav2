@@ -10,6 +10,7 @@ install(
 
 install(
   PROGRAMS
+    scripts/dynamic_obstacle_controller.py
     scripts/scan_safety_guard.py
     scripts/static_world_marker_publisher.py
   DESTINATION lib/${PROJECT_NAME}

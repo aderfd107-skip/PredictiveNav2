@@ -47,6 +47,7 @@ def generate_launch_description():
                 # navigation.  Do not also give odom a world parent.
                 "use_world_odom_anchor": "false",
                 "enable_scan_safety_guard": "true",
+                "enable_dynamic_obstacle": LaunchConfiguration("enable_dynamic_obstacle"),
             }.items(),
         )],
     )
@@ -204,6 +205,11 @@ def generate_launch_description():
             DeclareLaunchArgument("rviz_config", default_value=default_rviz),
             DeclareLaunchArgument("use_sim_time", default_value="true"),
             DeclareLaunchArgument("use_rviz", default_value="true"),
+            DeclareLaunchArgument(
+                "enable_dynamic_obstacle",
+                default_value="false",
+                description="Enable the repeatable moving obstacle for dynamic-navigation trials.",
+            ),
             DeclareLaunchArgument("spawn_x", default_value="5.8"),
             DeclareLaunchArgument("spawn_y", default_value="-3.85"),
             DeclareLaunchArgument("spawn_yaw", default_value="1.5708"),
