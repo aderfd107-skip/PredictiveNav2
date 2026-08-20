@@ -376,3 +376,81 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard \
 4. **线速度和角速度要联动**。靠墙减速时如果只降线速度不降角速度，机器人会原地打转，产生晃动。`ang_scale = min(front_scale, rear_scale)` 确保两者同步。
 5. **EMA 滤波要考虑无穷大边界**。`0.25 × 0.3 + 0.75 × inf = inf`，传感器从"无障碍"变为"有障碍"时滤波值永远不更新。需要 `isfinite` 判断，inf→finite 直接跳变。
 6. **URDF 字符串作为 ROS 参数需要 `ParameterValue` 包装**，否则 YAML 解析器会把 XML 标签当 YAML 语法报错。
+
+---
+
+### 2026-08-19：RViz 中点击 Nav2 Goal 后小车不动
+
+#### 问题现象
+
+- `nav_baseline.launch.py` 已启动 Gazebo、AMCL、Nav2 和 RViz；机器人在 Gazebo 中正常生成。
+- 在 RViz 中选择 `Nav2 Goal`、在灰色可通行区域拖动目标姿态后，机器人没有移动。
+- 排查时 Nav2 的 AMCL、planner、controller、BT navigator 和 velocity smoother 均为 `active`，但没有新的 `/plan`、`/cmd_vel` 或 `/cmd_vel_safe` 输出。
+- 直接用终端向同一个 `/navigate_to_pose` 动作服务器发送目标时，机器人可以正常行驶并返回 `SUCCEEDED`。
+
+#### 初步判断
+
+- 因为直接动作测试能驱动机器人，Gazebo、`/cmd_vel → /cmd_vel_safe → DiffDrive`、AMCL、DWB 和 Nav2 action server 本身都不是根因。
+- 问题应位于 RViz 点击目标到 `NavigateToPose` 动作请求之间。
+- 另一个相关误操作是 `2D Pose Estimate`：它会覆盖 bringup 自动发布的初始位姿，使 `map → odom` 重新对齐，进而造成激光在地图中错位；静态 baseline 不需要手动使用该工具。
+
+#### 排查命令
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+# 确认 Nav2 生命周期节点已工作。
+ros2 lifecycle get /amcl
+ros2 lifecycle get /controller_server
+ros2 lifecycle get /planner_server
+ros2 lifecycle get /bt_navigator
+
+# 确认定位 TF 正常。
+ros2 topic echo --once /amcl_pose
+ros2 run tf2_ros tf2_echo map base_footprint
+
+# 验证动作服务器与底盘执行链路。
+ros2 action info /navigate_to_pose
+ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
+  '{pose: {header: {frame_id: map}, pose: {position: {x: 5.8, y: -2.5, z: 0.0}, orientation: {z: 0.0, w: 1.0}}}}' \
+  --feedback
+```
+
+#### 根因
+
+- Jazzy 的 `nav2_rviz_plugins/GoalTool` 不会自行创建 `NavigateToPose` action client。
+- 它只向 RViz 发出内部目标姿态信号；`nav2_rviz_plugins/Navigation 2` 面板负责接收该信号，再调用 `/navigate_to_pose`。
+- 初始 RViz 配置只加入了 `GoalTool`，遗漏了 `Navigation 2` 面板。因此鼠标操作没有真正发送导航目标，规划器和控制器自然不会产生路径或速度命令。
+
+#### 解决方法
+
+- 修改 `src/predictive_nav_bringup/rviz/nav_baseline.rviz`：
+  - 在 `Panels` 中加入 `nav2_rviz_plugins/Navigation 2`，名称为 `Nav2`。
+  - 将 `nav2_rviz_plugins/GoalTool` 放在工具列表第一位。
+  - 移除 `rviz_default_plugins/SetInitialPose`，避免用户用 `2D Pose Estimate` 覆盖自动定位。
+- 修改 `docs/nav_baseline.md` 和 `PROJECT_PROGRESS.md`，说明 GoalTool 与 Navigation 2 面板的配合关系。
+- 重新构建 `predictive_nav_bringup`，重启 RViz 后加载新配置。
+
+#### 验证方法
+
+```bash
+cd ~/PredictiveNav2
+source /opt/ros/jazzy/setup.bash
+colcon build --packages-select predictive_nav_bringup
+source install/setup.bash
+ros2 launch predictive_nav_bringup nav_baseline.launch.py
+```
+
+预期结果：
+
+- RViz 显示 `Nav2` 面板，且其定位和导航状态正常。
+- 使用默认的 `Nav2 Goal` 在灰色可通行区域设置目标后，出现全局/局部路径，机器人开始移动。
+- 终端日志会显示 controller 收到目标，并最终出现 `Goal succeeded`。
+- 已验证：对 `(5.8, -2.5)` 的导航动作返回 `SUCCEEDED`，机器人从出生点移动至目标附近，恢复次数为 0。
+
+#### 经验总结
+
+1. RViz 工具显示在工具栏上，不等于它已具备完整的 ROS 执行链路；应确认对应 panel、action client 或 topic publisher 是否同时存在。
+2. 遇到“点击目标却不动”时，按顺序检查：动作是否到达 → 是否生成 `/plan` → 是否产生 `/cmd_vel` → `/cmd_vel_safe` 是否被过滤 → Gazebo 是否接收。
+3. 已知出生位姿的静态 AMCL baseline 应自动初始化；不要把 `2D Pose Estimate` 当作常规导航步骤。

@@ -27,7 +27,7 @@
 
 ### 2.1 实际目录与构建状态
 
-当前工作区有两个已完成命名迁移的 `ament_cmake` 基础包：`predictive_nav_description` 与 `predictive_nav_simulation`。没有 C++ 源码、测试目录、消息定义、Nav2 bringup/config，亦没有障碍物检测、跟踪、预测、风险或 Nav2 plugin 实现。
+当前工作区有三个 `ament_cmake` 基础包：`predictive_nav_description`、`predictive_nav_simulation` 与 `predictive_nav_bringup`。后者已提供并验证 AMCL + DWB 静态导航 baseline。没有动态导航核心所需的 C++ 源码、测试目录、消息定义、障碍物检测、跟踪、预测、风险或 Nav2 plugin 实现。
 
 已于本次审查执行：
 
@@ -49,7 +49,7 @@ colcon build --packages-select predictive_nav_description predictive_nav_simulat
 | 基础安全过滤 | Python `scan_safety_guard.py` 按 LaserScan 最小距离限速 | Implemented，但不是预测风险算法 |
 | SLAM | 通用 `mapping.launch.py`、已保存 PGM/YAML 地图 | Implemented，仅作地图制作/调试 |
 | 动态障碍物 | 无移动 actor、无检测、无跟踪、无预测 | Not Started |
-| Nav2 导航 | 未提供 Nav2 bringup、controller 配置或目标执行 | Not Started |
+| Nav2 导航 | AMCL + DWB 已知地图 baseline、初始位姿确认、Nav2 Goal RViz 工具与受控启动等待；直接启动 Nav2 节点，不依赖缺失的 `nav2_bringup` | Implemented（已完成单目标端到端仿真验证） |
 | Benchmark / 测试 | 无自动实验、CSV/JSON 记录、单元测试或集成测试 | Not Started |
 
 ### 2.3 文件分类与处理结论
@@ -320,7 +320,7 @@ robot_localization       wheel odom + IMU → 滤波 odom / TF
 | LiDAR 聚类 | Not Started |
 | 多目标跟踪 + CV KF | Not Started |
 | 轨迹预测 | Not Started |
-| Nav2 DWB/原版 MPPI baseline | Not Started |
+| Nav2 DWB/原版 MPPI baseline | Implemented（DWB 已完成最小端到端验证；原版 MPPI 尚未开始） |
 | DynamicRiskCritic | Not Started |
 | Benchmark 与结果导出 | Not Started |
 | 真机适配 | Not Started |
@@ -342,6 +342,8 @@ robot_localization       wheel odom + IMU → 滤波 odom / TF
 **2026-08-17 — 第一轮结构重构完成。** 原因是已有实现仍以多机器人业务语义组织，无法作为动态预测导航的清晰基线。完成包、launch、URDF、地图、RViz 和 SLAM 工具的统一重命名；移除业务角色、冗余显示入口、旧规划文档和无引用 TF 快照。`docs/` 原有内容随后按用户要求恢复并保留，后续仅能增量维护。验证结果：两个基础包 `colcon build` 通过，xacro/URDF 与 SDF XML 解析通过，三个 launch 均可加载并列出参数。动态 actor 及所有核心算法保持 `Not Started`，未被本轮结构变更伪装为已实现。
 
 **2026-08-19 — 远端历史整合。** 将远端新增提交 rebase 到当前分支后，确认其 `inspection_core` 包仅包含多机器人 A*/任务规划代码，且无其他包引用；已从源码树移除以保持项目边界。根据用户要求，`docs/inspection_core_explained.md` 及其他既有文档保留为历史资料，不删除。
+
+**2026-08-19 — DWB 静态导航 baseline 实施与最小验证完成。** 基于已有 `scan`、`odom`、TF 与静态地图，新建 `predictive_nav_bringup`，加入 `nav_baseline.launch.py`、AMCL + DWB 参数、导航 RViz 和等待 map/scan 后确认 AMCL 收敛的初始位姿节点。运行时直接启动 Nav2 lifecycle nodes，不依赖未随当前 Jazzy `navigation2` 元包安装的 `nav2_bringup`。验证：三个包构建及 launch 参数加载通过；两套 lifecycle manager 均报告受管节点 Active；在 Gazebo 中向 `NavigateToPose` 发送 `(5.8, -2.5)`，机器人从约 `(5.76, -3.80)` 行驶至约 `(5.81, -2.69)`，动作返回 `SUCCEEDED`、零 recovery。该状态仅表示 DWB 的最小端到端运行已存在；三目标回归、原版 MPPI、动态算法和 benchmark 仍未实现。
 
 ## 11. 最终 README 应包含
 
