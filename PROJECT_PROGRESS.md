@@ -24,7 +24,7 @@ PredictiveNav2 最终要实现：机器人用 2D LiDAR 发现并跟踪动态障�
 | 基础激光安全过滤 | 已完成 | `scan_safety_guard.py` 对近距离障碍限速/停车；它不是预测风险算法。 |
 | AMCL + Nav2 DWB 静态导航 | 已完成 | 已知地图定位、全局规划、DWB 局部控制、RViz 发导航目标。 |
 | 动态障碍物 actor | 已完成 | 3 个可复位 Gazebo 方块，覆盖下方、中央、右上通道，可由 ROS 2 服务启停。 |
-| LiDAR 聚类/动态目标检测 | 未开始 | 尚未从 `/scan` 输出障碍物观测。 |
+| LiDAR 聚类/动态目标检测 | 已开始（输入筛选） | `predictive_nav_perception/scan_info_node` 已用 C++ 订阅 `/scan`、筛除无效量程并打印摘要；尚未从 `/scan` 输出二维点或障碍物观测。 |
 | 多目标跟踪与 CV 卡尔曼滤波 | 未开始 | 尚无轨迹 ID、速度或协方差估计。 |
 | 轨迹预测 | 未开始 | 尚无未来位置和不确定性预测消息。 |
 | 原版 Nav2 MPPI baseline | 未开始 | 已安装相关依赖，但尚未配置和验证。 |
@@ -46,6 +46,25 @@ ros2 launch predictive_nav_bringup nav_baseline.launch.py
 已完成一次端到端 smoke test：向 `/navigate_to_pose` 发送 `(5.8, -2.5)`，机器人从约 `(5.76, -3.80)` 行驶至约 `(5.81, -2.69)`，动作结果为 `SUCCEEDED`，恢复次数为 0。
 
 ## 变更记录
+
+### 2026-08-24 — 实现 LaserScan 有效距离筛选
+
+- `scan_info_node` 对每帧 `/scan` 的所有 `ranges` 执行有限值与有效量程检查；保留原光束下标和距离，为后续极坐标转二维点准备。
+- 新增 `min_detection_range`、`max_detection_range` 参数；运行时取它们与传感器声明量程的交集，分别统计非有限和范围外的丢弃原因。
+- 验证：节点重新编译、链接和安装成功；尚未实现二维坐标、TF 或聚类。
+
+### 2026-08-24 — 加入最小 C++ LaserScan 订阅节点
+
+- `predictive_nav_perception` 新增 `scan_info_node`，使用 `SensorDataQoS` 订阅 `/scan`；每收到 10 条 LaserScan 消息打印 frame、时间戳、距离数量、角度与量程摘要。
+- 更新 CMake 与 package 依赖，加入 `rclcpp`、`sensor_msgs`，并安装可执行节点。
+- 节点仅用于验证真实 LiDAR 输入；它不读取 Gazebo 真值、不发布控制命令、不做点过滤或聚类。
+- 验证：`colcon build --packages-select predictive_nav_perception` 成功，1 个包完成。
+
+### 2026-08-24 — 创建 C++ 感知包骨架
+
+- 新建 `predictive_nav_perception`，包含 `package.xml`、`CMakeLists.txt`、`include/` 与 `src/` 目录，作为后续 LiDAR 感知 C++ 实现的唯一源码位置。
+- 当前包故意未加入节点、消息、算法或 ROS 运行依赖；下一步将从最小 `/scan` 订阅节点开始逐项加入。
+- 验证：`colcon build --packages-select predictive_nav_perception` 成功，1 个包完成。
 
 ### 2026-08-19 — 静态导航基线完成最小验证
 

@@ -27,7 +27,7 @@
 
 ### 2.1 实际目录与构建状态
 
-当前工作区有三个 `ament_cmake` 基础包：`predictive_nav_description`、`predictive_nav_simulation` 与 `predictive_nav_bringup`。后者已提供 AMCL + DWB 已知地图静态导航 baseline。`predictive_nav_simulation` 已包含三个可控 Gazebo 动态 actor；它们通过 ROS–Gazebo `set_pose` 服务运动，并被 `/scan` 实际观测到。尚没有动态导航核心所需的 C++ 源码、测试目录、消息定义、障碍物检测、跟踪、预测、风险或 Nav2 plugin 实现。
+当前工作区有四个 `ament_cmake` 包：`predictive_nav_description`、`predictive_nav_simulation`、`predictive_nav_bringup` 与新建的 `predictive_nav_perception`。后者已包含 C++ 节点 `scan_info_node`，可用 `SensorDataQoS` 订阅 `/scan`，按 ROS 参数筛除非有限和量程外读数，并节流打印 LaserScan 摘要；它只用于确认和清洗感知输入，尚未输出二维点、cluster 或其他算法结果。`predictive_nav_bringup` 已提供 AMCL + DWB 已知地图静态导航 baseline。`predictive_nav_simulation` 已包含三个可控 Gazebo 动态 actor；它们通过 ROS–Gazebo `set_pose` 服务运动，并被 `/scan` 实际观测到。尚没有障碍物检测、测试目录、消息定义、跟踪、预测、风险或 Nav2 plugin 实现。
 
 初始审查（2026-08-17）曾执行：
 
