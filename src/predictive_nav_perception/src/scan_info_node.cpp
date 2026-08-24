@@ -28,6 +28,15 @@ struct RangeFilterResult
   std::vector<ValidRange> valid_ranges;
 };
 
+struct CartesianPoint
+{
+  std::size_t beam_index{0U};
+  double range_m{0.0};
+  double angle_rad{0.0};
+  double x_m{0.0};
+  double y_m{0.0};
+};
+
 class ScanInfoNode : public rclcpp::Node
 {
 public:
@@ -85,10 +94,39 @@ private:
     return result;
   }
 
+  std::vector<CartesianPoint> ranges_to_lidar_points(
+    const sensor_msgs::msg::LaserScan & scan,
+    const std::vector<ValidRange> & valid_ranges) const
+  {
+    std::vector<CartesianPoint> points;
+    points.reserve(valid_ranges.size());
+
+    for (const ValidRange & valid_range : valid_ranges) {
+      const double angle_rad = static_cast<double>(scan.angle_min) +
+        static_cast<double>(valid_range.beam_index) *
+        static_cast<double>(scan.angle_increment);
+      const double range_m = static_cast<double>(valid_range.range_m);
+      const double x_m = range_m * std::cos(angle_rad);
+      const double y_m = range_m * std::sin(angle_rad);
+
+      points.push_back(
+        CartesianPoint{
+          valid_range.beam_index,
+          range_m,
+          angle_rad,
+          x_m,
+          y_m
+        });
+    }
+
+    return points;
+  }
+
   void scan_callback(const sensor_msgs::msg::LaserScan::ConstSharedPtr message)
   {
     ++message_count_;
     const RangeFilterResult filter_result = filter_ranges(*message);
+    const std::vector<CartesianPoint> lidar_points = ranges_to_lidar_points(*message, filter_result.valid_ranges);
 
     // A LiDAR can publish many times per second.  Logging every tenth message
     // keeps the terminal readable while still proving that data keeps arriving.
@@ -96,11 +134,27 @@ private:
       return;
     }
 
+    if (!lidar_points.empty()) {
+      const CartesianPoint & first_point = lidar_points.front();
+      RCLCPP_INFO(
+        get_logger(),
+        "first valid point | beam=%zu | range=%.2f m | angle=%.3f rad | "
+        "lidar_link=(%.2f, %.2f) m",
+        first_point.beam_index,
+        first_point.range_m,
+        first_point.angle_rad,
+        first_point.x_m,
+        first_point.y_m);
+    }
+
+
+
     RCLCPP_INFO(
       get_logger(),
       "scan #%zu | frame=%s | stamp=%d.%09u | ranges=%zu | "
       "kept=%zu | discarded(non_finite=%zu, out_of_range=%zu) | "
-      "angle_min=%.3f rad | angle_increment=%.5f rad | filter_range=[%.2f, %.2f] m",
+      "lidar_points=%zu | angle_min=%.3f rad | angle_increment=%.5f rad | "
+      "filter_range=[%.2f, %.2f] m",
       message_count_,
       message->header.frame_id.c_str(),
       static_cast<int>(message->header.stamp.sec),
@@ -109,6 +163,7 @@ private:
       filter_result.valid_ranges.size(),
       filter_result.non_finite_count,
       filter_result.out_of_range_count,
+      lidar_points.size(),
       static_cast<double>(message->angle_min),
       static_cast<double>(message->angle_increment),
       min_detection_range_,
