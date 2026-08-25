@@ -7,6 +7,7 @@ Panels:
         - /Global Options1
         - /Map1
         - /LaserScan1
+        - /Scan-Derived Clusters (Debug)1
         - /Gazebo Ground Truth (Debug)1
       Splitter Ratio: 0.5
     Tree Height: 450
@@ -39,6 +40,11 @@ Visualization Manager:
       Name: Gazebo Ground Truth (Debug)
       Topic:
         Value: /dynamic_obstacle/ground_truth_marker
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Marker Topic:
+        Value: /dynamic_obstacles/cluster_markers
+      Name: Scan-Derived Clusters (Debug)
     - Class: rviz_default_plugins/Path
       Color: 25; 255; 0
       Enabled: true

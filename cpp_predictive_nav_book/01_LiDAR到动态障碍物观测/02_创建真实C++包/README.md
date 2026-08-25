@@ -152,3 +152,9 @@ cd /home/aderfd/PredictiveNav2
 - [ ] `colcon build --packages-select predictive_nav_perception` 成功，末尾显示 1 个包完成。
 
 完成后告诉我构建末尾的输出。下一步才会在 `src/predictive_nav_perception/src/` 中添加第一份真正的 C++ 文件：订阅 `/scan` 并打印它的基本信息。
+
+## 本章关联的 ROS 2 知识
+
+**本章必须懂**：一个 ROS 2 C++ 包至少要让系统知道“它叫什么、依赖什么、怎样构建”。`package.xml` 负责前两件事，`CMakeLists.txt` 负责最后一件事；构建完成后重新 `source install/setup.bash`，当前终端才能找到新程序。
+
+**可选扩展**：不用现在研究 ament 宏、overlay workspace 或发行包规则；遇到构建错误时再针对性补。

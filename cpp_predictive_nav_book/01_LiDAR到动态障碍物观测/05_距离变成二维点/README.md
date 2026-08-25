@@ -424,3 +424,9 @@ source install/setup.bash
 - [ ] 我能解释：这些点仍跟着机器人运动，尚不能直接用于全局/跨帧跟踪。
 
 完成后，把一条包含 `first valid point` 的日志发给我。下一步会学习 TF：在**这条 scan 的原始时间**查询 `odom ← lidar_link`，把本步的点放进连续、可跟踪的坐标系。
+
+## 本章关联的 ROS 2 知识
+
+**本章必须懂**：本章计算出的 `(x, y)` 默认属于消息 header 中的 `lidar_link`，不是世界坐标。数字本身没有 frame 意义；只有把它和 scan 的 frame、时间戳一起看，后续才能正确转换。
+
+**可选扩展**：不必现在上手 PCL、PointCloud2 或三维旋转。这个项目当前是二维 LiDAR，先把二维几何和 frame 关系弄清即可。

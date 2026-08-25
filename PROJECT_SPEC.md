@@ -1,6 +1,6 @@
 # PredictiveNav2 — 项目总体规格
 
-> **唯一总体设计依据。** 本文档基于工作区实际状态维护，最近一次状态同步为 **2026-08-20**。文中明确标记的 `Not Started` 项目不是现有功能；后续核心实现、重构和 README 均以本文为准。实现与设计不一致时，必须先更新本文并记录原因。
+> **唯一总体设计依据。** 本文档基于工作区实际状态维护，最近一次状态同步为 **2026-08-25**。文中明确标记的 `Not Started` 项目不是现有功能；后续核心实现、重构和 README 均以本文为准。实现与设计不一致时，必须先更新本文并记录原因。
 
 ## 1. 项目定位与边界
 
@@ -27,7 +27,7 @@
 
 ### 2.1 实际目录与构建状态
 
-当前工作区有四个 `ament_cmake` 包：`predictive_nav_description`、`predictive_nav_simulation`、`predictive_nav_bringup` 与新建的 `predictive_nav_perception`。后者已包含 C++ 节点 `scan_info_node`，可用 `SensorDataQoS` 订阅 `/scan`，按 ROS 参数筛除非有限和量程外读数，并节流打印 LaserScan 摘要；它只用于确认和清洗感知输入，尚未输出二维点、cluster 或其他算法结果。`predictive_nav_bringup` 已提供 AMCL + DWB 已知地图静态导航 baseline。`predictive_nav_simulation` 已包含三个可控 Gazebo 动态 actor；它们通过 ROS–Gazebo `set_pose` 服务运动，并被 `/scan` 实际观测到。尚没有障碍物检测、测试目录、消息定义、跟踪、预测、风险或 Nav2 plugin 实现。
+当前工作区有五个 `ament_cmake` 包：`predictive_nav_description`、`predictive_nav_simulation`、`predictive_nav_bringup`、`predictive_nav_msgs` 与 `predictive_nav_perception`。`predictive_nav_msgs` 定义了 `ObstacleCluster` 与 `ObstacleClusterArray`。感知节点 `scan_info_node` 可用 `SensorDataQoS` 订阅 `/scan`，按 ROS 参数筛除非有限和量程外读数，将有效距离转为 `lidar_link` 二维点，并以原始 scan 时间戳通过 TF 转为 `odom` 跟踪点；它还实现了顺序欧氏聚类，以 `SensorDataQoS` 向 `/dynamic_obstacles/clusters` 发布每帧几何观测（中心、轴对齐尺寸、点数、公共 `odom` header），并在独立的 `/dynamic_obstacles/cluster_markers` 发布只供 RViz 调试的 MarkerArray。它尚未判断 cluster 是否动态。`predictive_nav_bringup` 已提供 AMCL + DWB 已知地图静态导航 baseline。`predictive_nav_simulation` 已包含三个可控 Gazebo 动态 actor；它们通过 ROS–Gazebo `set_pose` 服务运动，并被 `/scan` 实际观测到。尚没有跟踪、预测、风险或 Nav2 plugin 实现。
 
 初始审查（2026-08-17）曾执行：
 

@@ -1,6 +1,6 @@
 # PredictiveNav2 项目进度
 
-> **最后更新：2026-08-20**
+> **最后更新：2026-08-25**
 >
 > 本文件记录项目“实际已经完成并验证的内容”，不把设计目标当作既有功能。后续每次对项目做实质修改时，应同步更新“当前状态”和“变更记录”。完整技术设计见 [PROJECT_SPEC.md](PROJECT_SPEC.md)。
 
@@ -24,7 +24,7 @@ PredictiveNav2 最终要实现：机器人用 2D LiDAR 发现并跟踪动态障�
 | 基础激光安全过滤 | 已完成 | `scan_safety_guard.py` 对近距离障碍限速/停车；它不是预测风险算法。 |
 | AMCL + Nav2 DWB 静态导航 | 已完成 | 已知地图定位、全局规划、DWB 局部控制、RViz 发导航目标。 |
 | 动态障碍物 actor | 已完成 | 3 个可复位 Gazebo 方块，覆盖下方、中央、右上通道，可由 ROS 2 服务启停。 |
-| LiDAR 聚类/动态目标检测 | 已开始（输入筛选） | `predictive_nav_perception/scan_info_node` 已用 C++ 订阅 `/scan`、筛除无效量程并打印摘要；尚未从 `/scan` 输出二维点或障碍物观测。 |
+| LiDAR 聚类/动态目标检测 | 已开始（已发布且可视化） | `predictive_nav_perception/scan_info_node` 已用 C++ 订阅 `/scan`、筛除无效量程、生成 `odom` 点并做顺序欧氏聚类，发布 `/dynamic_obstacles/clusters` 和仅调试用的 RViz MarkerArray；它仍只是几何候选观测，尚未判断动态性。 |
 | 多目标跟踪与 CV 卡尔曼滤波 | 未开始 | 尚无轨迹 ID、速度或协方差估计。 |
 | 轨迹预测 | 未开始 | 尚无未来位置和不确定性预测消息。 |
 | 原版 Nav2 MPPI baseline | 未开始 | 已安装相关依赖，但尚未配置和验证。 |
@@ -46,6 +46,31 @@ ros2 launch predictive_nav_bringup nav_baseline.launch.py
 已完成一次端到端 smoke test：向 `/navigate_to_pose` 发送 `(5.8, -2.5)`，机器人从约 `(5.76, -3.80)` 行驶至约 `(5.81, -2.69)`，动作结果为 `SUCCEEDED`，恢复次数为 0。
 
 ## 变更记录
+
+### 2026-08-25 — 加入 cluster 的 RViz 验证覆盖层
+
+- 感知节点根据自身 `/scan` 聚类结果，在 `/dynamic_obstacles/cluster_markers` 发布 MarkerArray：青色轴对齐方框表示尺寸，红色小球表示中心；每帧清理旧 Marker，避免 cluster 数量减少后出现幽灵障碍物。
+- Nav2 默认 RViz 配置新增 `Scan-Derived Clusters (Debug)` MarkerArray display；它与现有橙色 Gazebo 真值调试 Marker 分离，真值仍不参与算法输入。
+- 验证：`predictive_nav_perception` 与 `predictive_nav_bringup` 构建成功。运行时 RViz 对照待用户按第 09 步启动动态场景后完成。
+
+### 2026-08-25 — 发布 LiDAR cluster 观测接口
+
+- 新建 `predictive_nav_msgs` 接口包，定义 `ObstacleCluster`（中心、二维尺寸、点数）和带公共时间戳/坐标系的 `ObstacleClusterArray`。
+- `scan_info_node` 以 `SensorDataQoS` 向 `/dynamic_obstacles/clusters` 发布每帧聚类结果；输出 header 严格使用原始 scan 时间戳和 `odom` frame，不读取 Gazebo 真值。
+- 验证：`colcon build --packages-up-to predictive_nav_perception` 成功，新增消息包与感知包均完成；`ros2 interface show predictive_nav_msgs/msg/ObstacleClusterArray` 显示预期字段。Gazebo 运行时 topic 回显待用户按第 08 步完成。
+
+### 2026-08-25 — 实现顺序欧氏 LiDAR 聚类
+
+- `scan_info_node` 按相邻原始 beam index 和二维欧氏距离将 `odom` 跟踪点分为候选 cluster；对每组计算点数、质心和轴对齐尺寸。
+- 新增距离阈值、最小/最大 cluster 点数参数，并分别统计过小噪声组与过大结构组；当前 cluster 仅内部生成并节流打印，尚未发布 ROS 消息。
+- 验证：C++ 节点重新编译、链接和安装成功。运行时场景在验证时已停止、`/scan` 不存在，因此 cluster 输出待下次启动 Gazebo 后按第 07 步执行验证。
+
+### 2026-08-25 — 将有效 LiDAR 点转换到 odom
+
+- `scan_info_node` 将每束有效 LaserScan 依据原始 beam index、`angle_min` 和 `angle_increment` 转为 `lidar_link` 二维点，再通过 `odom ← lidar_link` TF 转为跟踪点。
+- 新增 `tf2`、`tf2_ros`、`tf2_geometry_msgs` 与 `geometry_msgs` 依赖；TF 查询严格使用 scan 的原始时间戳。查不到该时刻变换时丢弃当前帧并计数，绝不复用旧变换。
+- 修复运行验证中发现的 TF2 等待警告：感知回调不再阻塞等待 TF，而是立即查询并安全处理暂时不可用的帧。
+- 验证：在 Gazebo 运行场景中，单帧 `ranges=720`、`kept=719`、`lidar_points=719`、`tracking_points=719`、`tf_failures=0`。
 
 ### 2026-08-24 — 实现 LaserScan 有效距离筛选
 

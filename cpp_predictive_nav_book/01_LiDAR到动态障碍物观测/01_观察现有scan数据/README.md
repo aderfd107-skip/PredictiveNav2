@@ -211,3 +211,9 @@ ros2 topic hz /scan --use-sim-time
 - [ ] `ros2 topic hz /scan --use-sim-time` 显示稳定的持续更新（正常时接近 10 Hz）。
 
 完成后先告诉我你在哪一步看到了什么；下一步才会创建第一个真实的 C++ 包。你无需提前进入 `02_创建真实C++包`。
+
+## 本章关联的 ROS 2 知识
+
+**本章必须懂**：消息的 `header.frame_id` 说明数据在哪个坐标系表达；`header.stamp` 说明它何时测得。`ros2 topic hz` 默认按现实墙钟计时，而 `--use-sim-time` 按 Gazebo 的仿真时钟计时，所以你已经观察到两种 rate 不同。
+
+**可选扩展**：暂时不必研究 ROS clock 的源码或所有时间类型；只要后续涉及仿真数据时记得检查是否使用 sim time。
