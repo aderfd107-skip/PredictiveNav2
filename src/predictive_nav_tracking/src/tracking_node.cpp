@@ -1,6 +1,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -50,6 +51,24 @@ struct DeltaTimeResult
   double dt_s{0.0};
 };
 
+// Step 06 is deliberately a controlled, single-target experiment.  We do
+// not use Gazebo ground truth: a cluster is selected from the same perception
+// topic by asking which observed cluster is nearest to a chosen map region.
+struct DebugClusterSelection
+{
+  const predictive_nav_msgs::msg::ObstacleCluster * cluster{nullptr};
+  std::size_t cluster_index{0U};
+  double distance_to_reference_m{std::numeric_limits<double>::infinity()};
+};
+
+struct NaiveVelocityResult
+{
+  bool available{false};
+  double vx_mps{0.0};
+  double vy_mps{0.0};
+  double speed_mps{0.0};
+};
+
 class TrackingNode : public rclcpp::Node
 {
 public:
@@ -57,6 +76,10 @@ public:
   : Node("tracking_node")
   {
     max_dt_s_ = declare_parameter<double>("max_dt_s", 0.50);
+    debug_target_x_m_ = declare_parameter<double>("debug_target_x_m", 2.25);
+    debug_target_y_m_ = declare_parameter<double>("debug_target_y_m", -2.85);
+    debug_target_max_distance_m_ = declare_parameter<double>(
+      "debug_target_max_distance_m", 1.00);
 
     cluster_subscription_ = create_subscription<
       predictive_nav_msgs::msg::ObstacleClusterArray>(
@@ -69,8 +92,11 @@ public:
     RCLCPP_INFO(
       get_logger(),
       "Waiting for obstacle-cluster messages on /dynamic_obstacles/clusters; "
-      "accepting dt in (0, %.2f] s.",
-      max_dt_s_);
+      "accepting dt in (0, %.2f] s. Single-target debug reference=(%.2f, %.2f) m, max distance=%.2f m.",
+      max_dt_s_,
+      debug_target_x_m_,
+      debug_target_y_m_,
+      debug_target_max_distance_m_);
   }
 
 private:
@@ -115,12 +141,112 @@ private:
     return "unknown";
   }
 
+  DebugClusterSelection select_debug_cluster(
+    const predictive_nav_msgs::msg::ObstacleClusterArray & message) const
+  {
+    DebugClusterSelection selection;
+
+    for (std::size_t index = 0U; index < message.clusters.size(); ++index) {
+      const auto & candidate = message.clusters[index];
+      const double distance_m = std::hypot(
+        static_cast<double>(candidate.centroid.x) - debug_target_x_m_,
+        static_cast<double>(candidate.centroid.y) - debug_target_y_m_);
+
+      if (distance_m < selection.distance_to_reference_m) {
+        selection.cluster = &candidate;
+        selection.cluster_index = index;
+        selection.distance_to_reference_m = distance_m;
+      }
+    }
+
+    if (selection.distance_to_reference_m > debug_target_max_distance_m_) {
+      selection.cluster = nullptr;
+    }
+    return selection;
+  }
+
+  NaiveVelocityResult update_naive_velocity(
+    const DebugClusterSelection & selection,
+    const DeltaTimeResult & delta_time)
+  {
+    NaiveVelocityResult result;
+
+    // A finite-difference velocity needs two consecutive, valid observations.
+    // Losing either one resets the small experiment instead of joining points
+    // that may belong to different physical objects.
+    if (selection.cluster == nullptr || delta_time.status != DeltaTimeStatus::kValid) {
+      has_previous_debug_observation_ = false;
+      return result;
+    }
+
+    const double current_x_m = static_cast<double>(selection.cluster->centroid.x);
+    const double current_y_m = static_cast<double>(selection.cluster->centroid.y);
+
+    if (!has_previous_debug_observation_) {
+      previous_debug_x_m_ = current_x_m;
+      previous_debug_y_m_ = current_y_m;
+      has_previous_debug_observation_ = true;
+      return result;
+    }
+
+    result.vx_mps = (current_x_m - previous_debug_x_m_) / delta_time.dt_s;
+    result.vy_mps = (current_y_m - previous_debug_y_m_) / delta_time.dt_s;
+    result.speed_mps = std::hypot(result.vx_mps, result.vy_mps);
+    result.available = true;
+
+    previous_debug_x_m_ = current_x_m;
+    previous_debug_y_m_ = current_y_m;
+    return result;
+  }
+
+  void log_single_target_debug(
+    const DebugClusterSelection & selection,
+    const NaiveVelocityResult & velocity) const
+  {
+    if (selection.cluster == nullptr) {
+      RCLCPP_INFO(
+        get_logger(),
+        "single-target debug | reference=(%.2f, %.2f) m | no cluster within %.2f m",
+        debug_target_x_m_,
+        debug_target_y_m_,
+        debug_target_max_distance_m_);
+      return;
+    }
+
+    if (!velocity.available) {
+      RCLCPP_INFO(
+        get_logger(),
+        "single-target debug | cluster_index=%zu | centroid=(%.2f, %.2f) m | "
+        "reference_distance=%.2f m | velocity=warming_up",
+        selection.cluster_index,
+        selection.cluster->centroid.x,
+        selection.cluster->centroid.y,
+        selection.distance_to_reference_m);
+      return;
+    }
+
+    RCLCPP_INFO(
+      get_logger(),
+      "single-target debug | cluster_index=%zu | centroid=(%.2f, %.2f) m | "
+      "reference_distance=%.2f m | naive_velocity=(%.2f, %.2f) m/s | speed=%.2f m/s",
+      selection.cluster_index,
+      selection.cluster->centroid.x,
+      selection.cluster->centroid.y,
+      selection.distance_to_reference_m,
+      velocity.vx_mps,
+      velocity.vy_mps,
+      velocity.speed_mps);
+  }
+
   void cluster_callback(
     const predictive_nav_msgs::msg::ObstacleClusterArray::ConstSharedPtr message)
   {
     ++message_count_;
     const rclcpp::Time current_stamp(message->header.stamp, RCL_ROS_TIME);
     const DeltaTimeResult delta_time = update_delta_time(current_stamp);
+    const DebugClusterSelection debug_selection = select_debug_cluster(*message);
+    const NaiveVelocityResult naive_velocity = update_naive_velocity(
+      debug_selection, delta_time);
 
     if (delta_time.status == DeltaTimeStatus::kNonPositive) {
       RCLCPP_WARN(
@@ -167,6 +293,7 @@ private:
         static_cast<unsigned int>(next_track_id_),
         non_positive_dt_count_,
         too_large_dt_count_);
+      log_single_target_debug(debug_selection, naive_velocity);
       return;
     }
 
@@ -193,6 +320,7 @@ private:
       static_cast<unsigned int>(next_track_id_),
       non_positive_dt_count_,
       too_large_dt_count_);
+    log_single_target_debug(debug_selection, naive_velocity);
   }
 
   rclcpp::Subscription<predictive_nav_msgs::msg::ObstacleClusterArray>::SharedPtr
@@ -207,6 +335,12 @@ private:
   double max_dt_s_{0.50};
   std::size_t non_positive_dt_count_{0U};
   std::size_t too_large_dt_count_{0U};
+  double debug_target_x_m_{2.25};
+  double debug_target_y_m_{-2.85};
+  double debug_target_max_distance_m_{1.00};
+  double previous_debug_x_m_{0.0};
+  double previous_debug_y_m_{0.0};
+  bool has_previous_debug_observation_{false};
 };
 
 }  // namespace predictive_nav
