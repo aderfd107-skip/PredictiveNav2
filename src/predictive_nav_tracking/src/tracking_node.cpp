@@ -80,6 +80,9 @@ public:
     debug_target_y_m_ = declare_parameter<double>("debug_target_y_m", -2.85);
     debug_target_max_distance_m_ = declare_parameter<double>(
       "debug_target_max_distance_m", 1.00);
+    initial_position_stddev_m_ = declare_parameter<double>("initial_position_stddev_m", 0.20);
+    initial_velocity_stddev_mps_ = declare_parameter<double>(
+      "initial_velocity_stddev_mps", 1.00);
 
     cluster_subscription_ = create_subscription<
       predictive_nav_msgs::msg::ObstacleClusterArray>(
@@ -92,11 +95,14 @@ public:
     RCLCPP_INFO(
       get_logger(),
       "Waiting for obstacle-cluster messages on /dynamic_obstacles/clusters; "
-      "accepting dt in (0, %.2f] s. Single-target debug reference=(%.2f, %.2f) m, max distance=%.2f m.",
+      "accepting dt in (0, %.2f] s. Single-target debug reference=(%.2f, %.2f) m, max distance=%.2f m. "
+      "Initial CV stddev=(position=%.2f m, velocity=%.2f m/s).",
       max_dt_s_,
       debug_target_x_m_,
       debug_target_y_m_,
-      debug_target_max_distance_m_);
+      debug_target_max_distance_m_,
+      initial_position_stddev_m_,
+      initial_velocity_stddev_mps_);
   }
 
 private:
@@ -199,6 +205,67 @@ private:
     return result;
   }
 
+  Eigen::Matrix4d make_initial_cv_covariance() const
+  {
+    // A covariance diagonal stores variances, so each standard deviation is
+    // squared.  Off-diagonal terms start at zero: initially we assume no
+    // known correlation between position and velocity errors.
+    const double position_variance = initial_position_stddev_m_ * initial_position_stddev_m_;
+    const double velocity_variance =
+      initial_velocity_stddev_mps_ * initial_velocity_stddev_mps_;
+
+    Eigen::Matrix4d covariance = Eigen::Matrix4d::Zero();
+    covariance(Track::kPositionX, Track::kPositionX) = position_variance;
+    covariance(Track::kPositionY, Track::kPositionY) = position_variance;
+    covariance(Track::kVelocityX, Track::kVelocityX) = velocity_variance;
+    covariance(Track::kVelocityY, Track::kVelocityY) = velocity_variance;
+    return covariance;
+  }
+
+  void initialize_debug_cv_state(
+    const DebugClusterSelection & selection,
+    const DeltaTimeResult & delta_time,
+    const rclcpp::Time & current_stamp)
+  {
+    // This is deliberately not a real track yet.  It lets us inspect the
+    // exact state/covariance layout before step 08 predicts and step 10
+    // performs a Kalman measurement update.
+    if (has_debug_cv_state_ || selection.cluster == nullptr ||
+      delta_time.status != DeltaTimeStatus::kValid)
+    {
+      return;
+    }
+
+    debug_cv_state_.track_id = 0U;  // 0 means "teaching/debug state", not a public track ID.
+    debug_cv_state_.state <<
+      static_cast<double>(selection.cluster->centroid.x),
+      static_cast<double>(selection.cluster->centroid.y),
+      0.0,
+      0.0;
+    debug_cv_state_.covariance = make_initial_cv_covariance();
+    debug_cv_state_.size_x_m = static_cast<double>(selection.cluster->size_x_m);
+    debug_cv_state_.size_y_m = static_cast<double>(selection.cluster->size_y_m);
+    debug_cv_state_.first_observation_stamp = current_stamp;
+    debug_cv_state_.last_observation_stamp = current_stamp;
+    debug_cv_state_.age = 1U;
+    debug_cv_state_.missed_frames = 0U;
+    has_debug_cv_state_ = true;
+
+    RCLCPP_INFO(
+      get_logger(),
+      "CV state initialized (debug only) | x=[px=%.2f, py=%.2f, vx=%.2f, vy=%.2f] | "
+      "P_diag=[%.3f, %.3f, %.3f, %.3f] | cluster_index=%zu",
+      debug_cv_state_.state(Track::kPositionX),
+      debug_cv_state_.state(Track::kPositionY),
+      debug_cv_state_.state(Track::kVelocityX),
+      debug_cv_state_.state(Track::kVelocityY),
+      debug_cv_state_.covariance(Track::kPositionX, Track::kPositionX),
+      debug_cv_state_.covariance(Track::kPositionY, Track::kPositionY),
+      debug_cv_state_.covariance(Track::kVelocityX, Track::kVelocityX),
+      debug_cv_state_.covariance(Track::kVelocityY, Track::kVelocityY),
+      selection.cluster_index);
+  }
+
   void log_single_target_debug(
     const DebugClusterSelection & selection,
     const NaiveVelocityResult & velocity) const
@@ -247,6 +314,7 @@ private:
     const DebugClusterSelection debug_selection = select_debug_cluster(*message);
     const NaiveVelocityResult naive_velocity = update_naive_velocity(
       debug_selection, delta_time);
+    initialize_debug_cv_state(debug_selection, delta_time, current_stamp);
 
     if (delta_time.status == DeltaTimeStatus::kNonPositive) {
       RCLCPP_WARN(
@@ -341,6 +409,10 @@ private:
   double previous_debug_x_m_{0.0};
   double previous_debug_y_m_{0.0};
   bool has_previous_debug_observation_{false};
+  double initial_position_stddev_m_{0.20};
+  double initial_velocity_stddev_mps_{1.00};
+  Track debug_cv_state_{};
+  bool has_debug_cv_state_{false};
 };
 
 }  // namespace predictive_nav
