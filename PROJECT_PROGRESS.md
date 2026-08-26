@@ -1,6 +1,6 @@
 # PredictiveNav2 项目进度
 
-> **最后更新：2026-08-25**
+> **最后更新：2026-08-26**
 >
 > 本文件记录项目“实际已经完成并验证的内容”，不把设计目标当作既有功能。后续每次对项目做实质修改时，应同步更新“当前状态”和“变更记录”。完整技术设计见 [PROJECT_SPEC.md](PROJECT_SPEC.md)。
 
@@ -25,7 +25,7 @@ PredictiveNav2 最终要实现：机器人用 2D LiDAR 发现并跟踪动态障�
 | AMCL + Nav2 DWB 静态导航 | 已完成 | 已知地图定位、全局规划、DWB 局部控制、RViz 发导航目标。 |
 | 动态障碍物 actor | 已完成 | 3 个可复位 Gazebo 方块，覆盖下方、中央、右上通道，可由 ROS 2 服务启停。 |
 | LiDAR 聚类/动态目标检测 | 已开始（已发布且可视化） | `predictive_nav_perception/scan_info_node` 已用 C++ 订阅 `/scan`、筛除无效量程、生成 `odom` 点并做顺序欧氏聚类，发布 `/dynamic_obstacles/clusters` 和仅调试用的 RViz MarkerArray；它仍只是几何候选观测，尚未判断动态性。 |
-| 多目标跟踪与 CV 卡尔曼滤波 | 未开始 | 尚无轨迹 ID、速度或协方差估计。 |
+| 多目标跟踪与 CV 卡尔曼滤波 | 已开始（已实现输入与时间验证） | `predictive_nav_tracking/tracking_node` 已以 `SensorDataQoS` 订阅 `/dynamic_obstacles/clusters`、节流打印输入摘要，并以 header 时间戳计算/验证 `dt`；尚未分配 ID、估计速度或协方差，场景运行验证待完成。 |
 | 轨迹预测 | 未开始 | 尚无未来位置和不确定性预测消息。 |
 | 原版 Nav2 MPPI baseline | 未开始 | 已安装相关依赖，但尚未配置和验证。 |
 | DynamicRiskCritic | 未开始 | 尚未实现自定义 MPPI critic。 |
@@ -46,6 +46,30 @@ ros2 launch predictive_nav_bringup nav_baseline.launch.py
 已完成一次端到端 smoke test：向 `/navigate_to_pose` 发送 `(5.8, -2.5)`，机器人从约 `(5.76, -3.80)` 行驶至约 `(5.81, -2.69)`，动作结果为 `SUCCEEDED`，恢复次数为 0。
 
 ## 变更记录
+
+### 2026-08-26 — 创建多目标跟踪 C++ 包骨架
+
+- 新建 `predictive_nav_tracking`，包含 `package.xml`、`CMakeLists.txt` 与最小 `tracking_node`；声明 `rclcpp`、`predictive_nav_msgs` 和 Eigen 构建依赖，为后续 cluster 订阅与 CV 卡尔曼滤波预留接口。
+- 当前节点只输出启动提示，不读取 `/dynamic_obstacles/clusters`，不创建轨迹 ID，也不产生任何跟踪结论。
+- 验证：`colcon build --packages-select predictive_nav_tracking` 成功；`ros2 run predictive_nav_tracking tracking_node` 已输出预期启动日志。
+
+### 2026-08-26 — 接入 cluster 消息到跟踪节点
+
+- `tracking_node` 以 `SensorDataQoS` 订阅 `/dynamic_obstacles/clusters`，每十帧打印输入 header、cluster 数量和第一个 cluster 的中心、尺寸、点数；若 frame 不是 `odom` 会明确告警。
+- 此改动只验证模块间消息接口，不创建 track、不关联观测、不估计速度，也不发布 `/dynamic_obstacles/tracks`。
+- 验证：`colcon build --packages-select predictive_nav_tracking` 成功；完整 Gazebo 场景下的持续接收日志待用户按第 03 步运行确认。
+
+### 2026-08-26 — 定义跨帧 Track 状态结构
+
+- `tracking_node` 新增 `Track`：预留稳定 ID、`[px, py, vx, vy]` 状态、4×4 协方差、尺寸、首次/最近观测时间、`age` 和 `missed_frames`；节点成员 `tracks_` 用于后续跨 callback 持久保存轨迹。
+- 本步不从 cluster 创建 Track，`tracks_` 预期为空，日志显示 `active_tracks=0`；状态和协方差当前仅为可构建的占位初值，不代表真实估计。
+- 验证：`colcon build --packages-select predictive_nav_tracking` 成功。
+
+### 2026-08-26 — 按消息时间戳验证 tracking dt
+
+- `tracking_node` 新增基于连续 `ObstacleClusterArray.header.stamp` 的真实 `dt` 计算；首帧、非正/倒退时间和超过 `max_dt_s`（默认 0.50 s）的异常大间隔分别记录状态和诊断计数。
+- 当前仅验证时间输入；异常 dt 会在未来跟踪循环中被拒绝，尚未用于速度、卡尔曼预测或 track 更新。
+- 验证：`colcon build --packages-select predictive_nav_tracking` 成功；稳定 Gazebo 场景下 dt 约 0.1 s 的运行验证待用户完成。
 
 ### 2026-08-25 — 加入 cluster 的 RViz 验证覆盖层
 
