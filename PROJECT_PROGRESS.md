@@ -1,6 +1,6 @@
 # PredictiveNav2 项目进度
 
-> **最后更新：2026-08-26**
+> **最后更新：2026-08-27**
 >
 > 本文件记录项目“实际已经完成并验证的内容”，不把设计目标当作既有功能。后续每次对项目做实质修改时，应同步更新“当前状态”和“变更记录”。完整技术设计见 [PROJECT_SPEC.md](PROJECT_SPEC.md)。
 
@@ -25,7 +25,7 @@ PredictiveNav2 最终要实现：机器人用 2D LiDAR 发现并跟踪动态障�
 | AMCL + Nav2 DWB 静态导航 | 已完成 | 已知地图定位、全局规划、DWB 局部控制、RViz 发导航目标。 |
 | 动态障碍物 actor | 已完成 | 3 个可复位 Gazebo 方块，覆盖下方、中央、右上通道，可由 ROS 2 服务启停。 |
 | LiDAR 聚类/动态目标检测 | 已开始（已发布且可视化） | `predictive_nav_perception/scan_info_node` 已用 C++ 订阅 `/scan`、筛除无效量程、生成 `odom` 点并做顺序欧氏聚类，发布 `/dynamic_obstacles/clusters` 和仅调试用的 RViz MarkerArray；它仍只是几何候选观测，尚未判断动态性。 |
-| 多目标跟踪与 CV 卡尔曼滤波 | 已开始（CV 状态初始化已实现） | `predictive_nav_tracking/tracking_node` 已订阅 cluster、验证 `dt`，可做单目标差分速度实验，并能初始化教学用 CV 状态 `[px, py, vx, vy]` 与 4×4 协方差；尚未分配稳定 ID、创建实际 Track、预测、做多目标关联、KF 更新或发布 tracks。 |
+| 多目标跟踪与 CV 卡尔曼滤波 | 已开始（教学 CV 预测已实现） | `predictive_nav_tracking/tracking_node` 已订阅 cluster、验证 `dt`，可做单目标差分速度实验，并可对教学用 CV 状态 `[px, py, vx, vy]` 执行带协方差传播的预测；尚未分配稳定 ID、创建实际 Track、做多目标关联、KF 测量更新或发布 tracks。 |
 | 轨迹预测 | 未开始 | 尚无未来位置和不确定性预测消息。 |
 | 原版 Nav2 MPPI baseline | 未开始 | 已安装相关依赖，但尚未配置和验证。 |
 | DynamicRiskCritic | 未开始 | 尚未实现自定义 MPPI critic。 |
@@ -47,9 +47,15 @@ ros2 launch predictive_nav_bringup nav_baseline.launch.py
 
 ## 变更记录
 
+### 2026-08-27 — 对教学 CV 状态执行真实 dt 预测
+
+- `tracking_node` 新增 CV 预测矩阵与白噪声加速度过程噪声：对已有教学状态执行 `x = F(dt)x` 和 `P = FPFᵀ + Q`，并在日志中显示预测前后状态和协方差对角线。
+- 教学状态仅接受速度不超过 `debug_max_initial_speed_mps`（默认 0.80 m/s）的连续观测作为初始速度，避免已知的 cluster 跳变速度直接进入预测；它仍不是真实 Track，不进行数据关联或 Kalman measurement update。
+- 验证：`colcon build --packages-select predictive_nav_tracking` 成功；动态场景运行日志待用户按第 08 步确认。
+
 ### 2026-08-26 — 引入 CV 卡尔曼状态与初始协方差
 
-- `tracking_node` 为单目标教学实验加入 `Eigen::Vector4d` CV 状态 `[px, py, vx, vy]` 和 `Eigen::Matrix4d` 初始协方差：首次连续有效观测以 cluster 中心初始化位置、以零速度初始化速度，并按可配置的位置/速度标准差建立对角方差。
+- `tracking_node` 为单目标教学实验加入 `Eigen::Vector4d` CV 状态 `[px, py, vx, vy]` 和 `Eigen::Matrix4d` 初始协方差；第 08 步随后补充基于合理连续速度的教学初始化与 CV 预测。
 - `track_id=0` 的 `debug_cv_state_` 明确只用于观察状态布局，不进入 `tracks_`，不产生公开 ID，不执行预测或 Kalman update；它不改变第 06 步的朴素速度实验或其关联局限。
 - 验证：`colcon build --packages-select predictive_nav_tracking` 成功；动态场景的初始化日志待用户按第 07 步运行确认。
 

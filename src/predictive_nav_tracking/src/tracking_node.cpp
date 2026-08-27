@@ -83,6 +83,10 @@ public:
     initial_position_stddev_m_ = declare_parameter<double>("initial_position_stddev_m", 0.20);
     initial_velocity_stddev_mps_ = declare_parameter<double>(
       "initial_velocity_stddev_mps", 1.00);
+    debug_max_initial_speed_mps_ = declare_parameter<double>(
+      "debug_max_initial_speed_mps", 0.80);
+    process_acceleration_stddev_mps2_ = declare_parameter<double>(
+      "process_acceleration_stddev_mps2", 1.00);
 
     cluster_subscription_ = create_subscription<
       predictive_nav_msgs::msg::ObstacleClusterArray>(
@@ -96,13 +100,14 @@ public:
       get_logger(),
       "Waiting for obstacle-cluster messages on /dynamic_obstacles/clusters; "
       "accepting dt in (0, %.2f] s. Single-target debug reference=(%.2f, %.2f) m, max distance=%.2f m. "
-      "Initial CV stddev=(position=%.2f m, velocity=%.2f m/s).",
+      "Initial CV stddev=(position=%.2f m, velocity=%.2f m/s), max seed speed=%.2f m/s.",
       max_dt_s_,
       debug_target_x_m_,
       debug_target_y_m_,
       debug_target_max_distance_m_,
       initial_position_stddev_m_,
-      initial_velocity_stddev_mps_);
+      initial_velocity_stddev_mps_,
+      debug_max_initial_speed_mps_);
   }
 
 private:
@@ -222,16 +227,48 @@ private:
     return covariance;
   }
 
+  Eigen::Matrix4d make_cv_transition_matrix(double dt_s) const
+  {
+    Eigen::Matrix4d transition = Eigen::Matrix4d::Identity();
+    transition(Track::kPositionX, Track::kVelocityX) = dt_s;
+    transition(Track::kPositionY, Track::kVelocityY) = dt_s;
+    return transition;
+  }
+
+  Eigen::Matrix4d make_cv_process_noise(double dt_s) const
+  {
+    // This is the standard 2D constant-velocity model with unknown white
+    // acceleration.  Larger acceleration uncertainty lets P grow faster.
+    const double dt2 = dt_s * dt_s;
+    const double dt3 = dt2 * dt_s;
+    const double dt4 = dt2 * dt2;
+    const double acceleration_variance =
+      process_acceleration_stddev_mps2_ * process_acceleration_stddev_mps2_;
+
+    Eigen::Matrix4d process_noise = Eigen::Matrix4d::Zero();
+    process_noise(Track::kPositionX, Track::kPositionX) = dt4 / 4.0;
+    process_noise(Track::kPositionY, Track::kPositionY) = dt4 / 4.0;
+    process_noise(Track::kPositionX, Track::kVelocityX) = dt3 / 2.0;
+    process_noise(Track::kPositionY, Track::kVelocityY) = dt3 / 2.0;
+    process_noise(Track::kVelocityX, Track::kPositionX) = dt3 / 2.0;
+    process_noise(Track::kVelocityY, Track::kPositionY) = dt3 / 2.0;
+    process_noise(Track::kVelocityX, Track::kVelocityX) = dt2;
+    process_noise(Track::kVelocityY, Track::kVelocityY) = dt2;
+    return acceleration_variance * process_noise;
+  }
+
   void initialize_debug_cv_state(
     const DebugClusterSelection & selection,
+    const NaiveVelocityResult & velocity,
     const DeltaTimeResult & delta_time,
     const rclcpp::Time & current_stamp)
   {
     // This is deliberately not a real track yet.  It lets us inspect the
-    // exact state/covariance layout before step 08 predicts and step 10
-    // performs a Kalman measurement update.
+    // exact state/covariance layout before real tracks are associated and
+    // later receive Kalman measurement updates.
     if (has_debug_cv_state_ || selection.cluster == nullptr ||
-      delta_time.status != DeltaTimeStatus::kValid)
+      delta_time.status != DeltaTimeStatus::kValid || !velocity.available ||
+      !std::isfinite(velocity.speed_mps) || velocity.speed_mps > debug_max_initial_speed_mps_)
     {
       return;
     }
@@ -240,8 +277,8 @@ private:
     debug_cv_state_.state <<
       static_cast<double>(selection.cluster->centroid.x),
       static_cast<double>(selection.cluster->centroid.y),
-      0.0,
-      0.0;
+      velocity.vx_mps,
+      velocity.vy_mps;
     debug_cv_state_.covariance = make_initial_cv_covariance();
     debug_cv_state_.size_x_m = static_cast<double>(selection.cluster->size_x_m);
     debug_cv_state_.size_y_m = static_cast<double>(selection.cluster->size_y_m);
@@ -254,7 +291,7 @@ private:
     RCLCPP_INFO(
       get_logger(),
       "CV state initialized (debug only) | x=[px=%.2f, py=%.2f, vx=%.2f, vy=%.2f] | "
-      "P_diag=[%.3f, %.3f, %.3f, %.3f] | cluster_index=%zu",
+      "P_diag=[%.3f, %.3f, %.3f, %.3f] | cluster_index=%zu | seed_speed=%.2f m/s",
       debug_cv_state_.state(Track::kPositionX),
       debug_cv_state_.state(Track::kPositionY),
       debug_cv_state_.state(Track::kVelocityX),
@@ -263,7 +300,55 @@ private:
       debug_cv_state_.covariance(Track::kPositionY, Track::kPositionY),
       debug_cv_state_.covariance(Track::kVelocityX, Track::kVelocityX),
       debug_cv_state_.covariance(Track::kVelocityY, Track::kVelocityY),
-      selection.cluster_index);
+      selection.cluster_index,
+      velocity.speed_mps);
+  }
+
+  void predict_debug_cv_state(const DeltaTimeResult & delta_time)
+  {
+    if (!has_debug_cv_state_ || delta_time.status != DeltaTimeStatus::kValid) {
+      return;
+    }
+
+    const Eigen::Vector4d state_before = debug_cv_state_.state;
+    const Eigen::Matrix4d transition = make_cv_transition_matrix(delta_time.dt_s);
+    const Eigen::Matrix4d process_noise = make_cv_process_noise(delta_time.dt_s);
+
+    debug_cv_state_.state = transition * debug_cv_state_.state;
+    debug_cv_state_.covariance =
+      transition * debug_cv_state_.covariance * transition.transpose() + process_noise;
+    // Floating-point matrix multiplication can introduce a tiny asymmetry;
+    // covariance must mathematically remain symmetric.
+    debug_cv_state_.covariance =
+      0.5 * (debug_cv_state_.covariance + debug_cv_state_.covariance.transpose());
+
+    if (!debug_cv_state_.state.allFinite() || !debug_cv_state_.covariance.allFinite()) {
+      RCLCPP_ERROR(
+        get_logger(),
+        "CV prediction produced a non-finite state; discard the debug state and wait for a new valid seed.");
+      has_debug_cv_state_ = false;
+      return;
+    }
+
+    if (message_count_ % 10U == 0U) {
+      RCLCPP_INFO(
+        get_logger(),
+        "CV predict (debug only) | dt=%.3f s | before=(%.2f, %.2f, %.2f, %.2f) | "
+        "after=(%.2f, %.2f, %.2f, %.2f) | P_diag=(%.3f, %.3f, %.3f, %.3f)",
+        delta_time.dt_s,
+        state_before(Track::kPositionX),
+        state_before(Track::kPositionY),
+        state_before(Track::kVelocityX),
+        state_before(Track::kVelocityY),
+        debug_cv_state_.state(Track::kPositionX),
+        debug_cv_state_.state(Track::kPositionY),
+        debug_cv_state_.state(Track::kVelocityX),
+        debug_cv_state_.state(Track::kVelocityY),
+        debug_cv_state_.covariance(Track::kPositionX, Track::kPositionX),
+        debug_cv_state_.covariance(Track::kPositionY, Track::kPositionY),
+        debug_cv_state_.covariance(Track::kVelocityX, Track::kVelocityX),
+        debug_cv_state_.covariance(Track::kVelocityY, Track::kVelocityY));
+    }
   }
 
   void log_single_target_debug(
@@ -314,7 +399,8 @@ private:
     const DebugClusterSelection debug_selection = select_debug_cluster(*message);
     const NaiveVelocityResult naive_velocity = update_naive_velocity(
       debug_selection, delta_time);
-    initialize_debug_cv_state(debug_selection, delta_time, current_stamp);
+    predict_debug_cv_state(delta_time);
+    initialize_debug_cv_state(debug_selection, naive_velocity, delta_time, current_stamp);
 
     if (delta_time.status == DeltaTimeStatus::kNonPositive) {
       RCLCPP_WARN(
@@ -411,6 +497,8 @@ private:
   bool has_previous_debug_observation_{false};
   double initial_position_stddev_m_{0.20};
   double initial_velocity_stddev_mps_{1.00};
+  double debug_max_initial_speed_mps_{0.80};
+  double process_acceleration_stddev_mps2_{1.00};
   Track debug_cv_state_{};
   bool has_debug_cv_state_{false};
 };
