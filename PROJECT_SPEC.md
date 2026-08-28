@@ -1,6 +1,6 @@
 # PredictiveNav2 — 项目总体规格
 
-> **唯一总体设计依据。** 本文档基于工作区实际状态维护，最近一次状态同步为 **2026-08-27**。文中明确标记的 `Not Started` 项目不是现有功能；后续核心实现、重构和 README 均以本文为准。实现与设计不一致时，必须先更新本文并记录原因。
+> **唯一总体设计依据。** 本文档基于工作区实际状态维护，最近一次状态同步为 **2026-08-28**。文中明确标记的 `Not Started` 项目不是现有功能；后续核心实现、重构和 README 均以本文为准。实现与设计不一致时，必须先更新本文并记录原因。
 
 ## 1. 项目定位与边界
 
@@ -27,7 +27,7 @@
 
 ### 2.1 实际目录与构建状态
 
-当前工作区有六个 `ament_cmake` 包：`predictive_nav_description`、`predictive_nav_simulation`、`predictive_nav_bringup`、`predictive_nav_msgs`、`predictive_nav_perception` 与 `predictive_nav_tracking`。`predictive_nav_msgs` 定义了 `ObstacleCluster` 与 `ObstacleClusterArray`。感知节点 `scan_info_node` 可用 `SensorDataQoS` 订阅 `/scan`，按 ROS 参数筛除非有限和量程外读数，将有效距离转为 `lidar_link` 二维点，并以原始 scan 时间戳通过 TF 转为 `odom` 跟踪点；它还实现了顺序欧氏聚类，以 `SensorDataQoS` 向 `/dynamic_obstacles/clusters` 发布每帧几何观测（中心、轴对齐尺寸、点数、公共 `odom` header），并在独立的 `/dynamic_obstacles/cluster_markers` 发布只供 RViz 调试的 MarkerArray。它尚未判断 cluster 是否动态。`predictive_nav_tracking` 已以兼容 QoS 订阅该 cluster topic、节流记录输入摘要，定义 `Track` 结构，并根据连续 header 时间戳计算/验证 `dt`；此外有一个仅教学/验证用的单目标实验，可在参数化参考区域选取真实 cluster、获得通过速度门限的朴素初值，并对调试 CV 状态执行带过程噪声的 `F(dt)` 状态和协方差预测。它仍不创建实际 Track，没有稳定 ID、多目标关联、KF measurement update、真实协方差估计或 tracks 输出。`predictive_nav_bringup` 已提供 AMCL + DWB 已知地图静态导航 baseline。`predictive_nav_simulation` 已包含三个可控 Gazebo 动态 actor；它们通过 ROS–Gazebo `set_pose` 服务运动，并被 `/scan` 实际观测到。尚没有实际的多目标跟踪、预测、风险或 Nav2 plugin 实现。
+当前工作区有六个 `ament_cmake` 包：`predictive_nav_description`、`predictive_nav_simulation`、`predictive_nav_bringup`、`predictive_nav_msgs`、`predictive_nav_perception` 与 `predictive_nav_tracking`。`predictive_nav_msgs` 定义了 `ObstacleCluster` 与 `ObstacleClusterArray`。感知节点 `scan_info_node` 可用 `SensorDataQoS` 订阅 `/scan`，按 ROS 参数筛除非有限和量程外读数，将有效距离转为 `lidar_link` 二维点，并以原始 scan 时间戳通过 TF 转为 `odom` 跟踪点；它还实现了顺序欧氏聚类，以 `SensorDataQoS` 向 `/dynamic_obstacles/clusters` 发布每帧几何观测（中心、轴对齐尺寸、点数、公共 `odom` header），并在独立的 `/dynamic_obstacles/cluster_markers` 发布只供 RViz 调试的 MarkerArray。它尚未判断 cluster 是否动态。`predictive_nav_tracking` 已以兼容 QoS 订阅该 cluster topic、验证连续 header 的 `dt`，并实现基础版真实多目标 Track 循环：CV 状态/协方差预测、距离 gate 内的贪心一对一关联、二维 Kalman update、递增 ID、新生 Track、`missed_frames` 与过期删除；新 Track 从零速度和较大速度协方差开始。教学用单目标状态仍保留用于观察差分速度和滤波过程。该跟踪器尚未发布 tracks topic，未实现 tentative/confirmed、动态性分类、Hungarian/Mahalanobis 或运行期 benchmark，因此不能宣称已可靠解决遮挡/交叉下的 ID switch。`predictive_nav_bringup` 已提供 AMCL + DWB 已知地图静态导航 baseline。`predictive_nav_simulation` 已包含三个可控 Gazebo 动态 actor；它们通过 ROS–Gazebo `set_pose` 服务运动，并被 `/scan` 实际观测到。轨迹预测、动态风险和 Nav2 plugin 仍未实现。
 
 初始审查（2026-08-17）曾执行：
 
@@ -48,7 +48,7 @@ colcon build --packages-select predictive_nav_description predictive_nav_simulat
 | 可视化 | Nav2 RViz、SDF 静态模型 Marker、动态 actor 的真值调试 Marker | Implemented |
 | 基础安全过滤 | Python `scan_safety_guard.py` 按 LaserScan 最小距离限速 | Implemented，但不是预测风险算法 |
 | SLAM | 通用 `mapping.launch.py`、已保存 PGM/YAML 地图 | Implemented，仅作地图制作/调试 |
-| 动态障碍物 | 3 个固定路线的可控 actor；无检测、无跟踪、无预测 | Actor Implemented；算法 Not Started |
+| 动态障碍物 | 3 个固定路线 actor；LiDAR cluster 与基础 CV 多目标 Track 生命周期已构建；无未来轨迹预测或风险控制 | Actor/聚类/Track baseline Implemented；运行期评估待完成 |
 | Nav2 导航 | AMCL + DWB 已知地图 baseline、初始位姿确认、Nav2 Goal RViz 工具与受控启动等待；直接启动 Nav2 节点，不依赖缺失的 `nav2_bringup` | Implemented（已完成单目标端到端仿真验证） |
 | Benchmark / 测试 | 无自动实验、CSV/JSON 记录、单元测试或集成测试 | Not Started |
 
@@ -318,8 +318,8 @@ robot_localization       wheel odom + IMU → 滤波 odom / TF
 | 仓库审查与本规格 | Implemented |
 | 命名/第一轮结构重构 | Tested |
 | 单机器人动态仿真场景 | Implemented（3 个 actor 已完成最小运行与 `/scan` 观测验证；尚未 YAML 化和自动化） |
-| LiDAR 聚类 | Not Started |
-| 多目标跟踪 + CV KF | Not Started |
+| LiDAR 聚类 | Implemented（C++ 感知节点已发布 `odom` cluster；动态性判断与系统化测试待完成） |
+| 多目标跟踪 + CV KF | Implemented baseline（真实 ID、CV predict/update、贪心一对一关联、birth/miss/expiry 已构建；运行期评估、tracks topic 与进阶关联待完成） |
 | 轨迹预测 | Not Started |
 | Nav2 DWB/原版 MPPI baseline | Implemented（DWB 已完成最小端到端验证；原版 MPPI 尚未开始） |
 | DynamicRiskCritic | Not Started |

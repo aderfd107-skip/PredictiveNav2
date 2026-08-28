@@ -1,6 +1,6 @@
 # PredictiveNav2 项目进度
 
-> **最后更新：2026-08-27**
+> **最后更新：2026-08-28**
 >
 > 本文件记录项目“实际已经完成并验证的内容”，不把设计目标当作既有功能。后续每次对项目做实质修改时，应同步更新“当前状态”和“变更记录”。完整技术设计见 [PROJECT_SPEC.md](PROJECT_SPEC.md)。
 
@@ -25,7 +25,7 @@ PredictiveNav2 最终要实现：机器人用 2D LiDAR 发现并跟踪动态障�
 | AMCL + Nav2 DWB 静态导航 | 已完成 | 已知地图定位、全局规划、DWB 局部控制、RViz 发导航目标。 |
 | 动态障碍物 actor | 已完成 | 3 个可复位 Gazebo 方块，覆盖下方、中央、右上通道，可由 ROS 2 服务启停。 |
 | LiDAR 聚类/动态目标检测 | 已开始（已发布且可视化） | `predictive_nav_perception/scan_info_node` 已用 C++ 订阅 `/scan`、筛除无效量程、生成 `odom` 点并做顺序欧氏聚类，发布 `/dynamic_obstacles/clusters` 和仅调试用的 RViz MarkerArray；它仍只是几何候选观测，尚未判断动态性。 |
-| 多目标跟踪与 CV 卡尔曼滤波 | 已开始（教学 CV 预测已实现） | `predictive_nav_tracking/tracking_node` 已订阅 cluster、验证 `dt`，可做单目标差分速度实验，并可对教学用 CV 状态 `[px, py, vx, vy]` 执行带协方差传播的预测；尚未分配稳定 ID、创建实际 Track、做多目标关联、KF 测量更新或发布 tracks。 |
+| 多目标跟踪与 CV 卡尔曼滤波 | 已开始（真实 Track 生命周期已构建） | `predictive_nav_tracking/tracking_node` 已订阅 cluster、验证 `dt`，并实现 CV predict、距离 gate 内的贪心一对一关联、Kalman update、递增稳定 ID、新生与丢失删除。运行期验证待完成；尚未发布 `/dynamic_obstacles/tracks`，也未实现 Hungarian/Mahalanobis 或 Track 确认机制。 |
 | 轨迹预测 | 未开始 | 尚无未来位置和不确定性预测消息。 |
 | 原版 Nav2 MPPI baseline | 未开始 | 已安装相关依赖，但尚未配置和验证。 |
 | DynamicRiskCritic | 未开始 | 尚未实现自定义 MPPI critic。 |
@@ -46,6 +46,25 @@ ros2 launch predictive_nav_bringup nav_baseline.launch.py
 已完成一次端到端 smoke test：向 `/navigate_to_pose` 发送 `(5.8, -2.5)`，机器人从约 `(5.76, -3.80)` 行驶至约 `(5.81, -2.69)`，动作结果为 `SUCCEEDED`，恢复次数为 0。
 
 ## 变更记录
+
+### 2026-08-28 — 真实 Track 的新生与丢失管理
+
+- `tracking_node` 开始维护真实 `tracks_`：对有效 `odom` cluster 帧，先预测全部 Track，再做距离 gate 内的贪心一对一匹配；匹配成功执行 Kalman update，未匹配旧 Track 增加 `missed_frames`，未匹配有效 cluster 创建递增 ID 的新 Track。
+- 新 Track 的初始速度固定为 `(0, 0)`，但初始速度协方差保持较大，不再把单目标差分速度作为正式轨迹速度；当 `missed_frames > max_missed_frames`（默认 5）时，才删除 Track。
+- 明确边界：这是可解释的距离贪心 baseline，不保证目标交叉/遮挡中的身份不切换；尚无 tentative/confirmed 状态、动态性分类、Hungarian/Mahalanobis、tracks topic 或 RViz Track Marker。
+- 验证：`colcon build --packages-select predictive_nav_tracking` 成功；动态场景中的 ID 持续性和丢失行为待用户按第 11 步运行确认。
+
+### 2026-08-28 — 用匹配 LiDAR 测量更新教学 CV 状态
+
+- `tracking_node` 新增二维位置测量 Kalman update：以关联 cluster 中心为测量、以 `measurement_position_stddev_m`（默认 0.15 m）建立测量噪声，计算 innovation 和 gain，同时修正位置、速度与协方差；协方差使用 Joseph form 保持数值稳定。
+- 未关联、无效 dt、矩阵求解失败或非有限结果时会跳过/拒绝更新并记录诊断；该实现仍只作用于 ID 为 0 的教学状态，不创建真实多目标 Track。
+- 验证：`colcon build --packages-select predictive_nav_tracking` 成功；动态场景中的更新日志待用户按第 10 步确认。
+
+### 2026-08-28 — 预测位置的最近邻关联教学实验
+
+- `tracking_node` 新增 `association_gate_m`（默认 0.40 m）及最近邻关联：从当前所有有限 cluster 中找距教学 CV 预测位置最近者，只有距离不超过 gate 才记录为匹配；超出 gate 明确拒绝，避免“最近也硬连”的错误。
+- 此步骤只验证单一教学状态的关联规则，不更新状态、不创建真实 `tracks_`、不分配 ID，也未解决完整多目标一对一分配；这些将在后续 Kalman update 和生命周期步骤中完成。
+- 验证：`colcon build --packages-select predictive_nav_tracking` 成功；动态场景中的匹配/拒绝日志待用户按第 09 步确认。
 
 ### 2026-08-27 — 对教学 CV 状态执行真实 dt 预测
 
