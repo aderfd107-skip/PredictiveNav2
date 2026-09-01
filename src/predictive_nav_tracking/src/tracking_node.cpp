@@ -10,6 +10,7 @@
 #include <Eigen/Core>
 
 #include "predictive_nav_msgs/msg/obstacle_cluster_array.hpp"
+#include "predictive_nav_msgs/msg/tracked_obstacle_array.hpp"
 #include "rclcpp/rclcpp.hpp"
 
 namespace predictive_nav
@@ -122,7 +123,8 @@ public:
     debug_target_y_m_ = declare_parameter<double>("debug_target_y_m", -2.85);
     debug_target_max_distance_m_ = declare_parameter<double>(
       "debug_target_max_distance_m", 1.00);
-    initial_position_stddev_m_ = declare_parameter<double>("initial_position_stddev_m", 0.20);
+    initial_position_stddev_m_ = declare_parameter<double>(
+      "initial_position_stddev_m", 0.20);
     initial_velocity_stddev_mps_ = declare_parameter<double>(
       "initial_velocity_stddev_mps", 1.00);
     debug_max_initial_speed_mps_ = declare_parameter<double>(
@@ -144,6 +146,8 @@ public:
       [this](predictive_nav_msgs::msg::ObstacleClusterArray::ConstSharedPtr message) {
         cluster_callback(message);
       });
+    tracks_publisher_ = create_publisher<predictive_nav_msgs::msg::TrackedObstacleArray>(
+      "/dynamic_obstacles/tracks", rclcpp::SensorDataQoS());
 
     RCLCPP_INFO(
       get_logger(),
@@ -161,6 +165,9 @@ public:
       association_gate_m_,
       measurement_position_stddev_m_,
       max_missed_frames_);
+    RCLCPP_INFO(
+      get_logger(),
+      "Real Track states will be published on /dynamic_obstacles/tracks with SensorDataQoS.");
   }
 
 private:
@@ -559,6 +566,74 @@ private:
     return stats;
   }
 
+  std::uint32_t saturate_to_uint32(std::size_t value) const
+  {
+    const std::size_t largest_uint32 =
+      static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max());
+    return static_cast<std::uint32_t>(std::min(value, largest_uint32));
+  }
+
+  void publish_tracks(const predictive_nav_msgs::msg::ObstacleClusterArray & cluster_frame)
+  {
+    predictive_nav_msgs::msg::TrackedObstacleArray output;
+    // The state of every output obstacle represents this cluster frame's
+    // measurement time, not the later wall-clock time when the callback runs.
+    output.header = cluster_frame.header;
+    output.obstacles.reserve(tracks_.size());
+
+    // PoseWithCovariance/TwistWithCovariance are standard 3D ROS messages.
+    // Our 2D LiDAR tracker does not observe z, roll, pitch, yaw, vz or angular
+    // velocity, so those fields are set to zero with deliberately large
+    // variances rather than pretending they are known accurately.
+    constexpr double kUnobservedVariance = 1.0e6;
+    for (const Track & track : tracks_) {
+      auto & obstacle = output.obstacles.emplace_back();
+      obstacle.track_id = track.track_id;
+
+      obstacle.pose.pose.position.x = track.state(Track::kPositionX);
+      obstacle.pose.pose.position.y = track.state(Track::kPositionY);
+      obstacle.pose.pose.position.z = 0.0;
+      obstacle.pose.pose.orientation.w = 1.0;
+      obstacle.pose.covariance.fill(kUnobservedVariance);
+      // ROS covariance arrays are 6x6 row-major: x/y are positions 0/1.
+      obstacle.pose.covariance[0] = track.covariance(Track::kPositionX, Track::kPositionX);
+      obstacle.pose.covariance[1] = track.covariance(Track::kPositionX, Track::kPositionY);
+      obstacle.pose.covariance[6] = track.covariance(Track::kPositionY, Track::kPositionX);
+      obstacle.pose.covariance[7] = track.covariance(Track::kPositionY, Track::kPositionY);
+
+      obstacle.twist.twist.linear.x = track.state(Track::kVelocityX);
+      obstacle.twist.twist.linear.y = track.state(Track::kVelocityY);
+      obstacle.twist.twist.linear.z = 0.0;
+      obstacle.twist.covariance.fill(kUnobservedVariance);
+      // In TwistWithCovariance, vx/vy are entries 0/1 in the same layout.
+      obstacle.twist.covariance[0] = track.covariance(Track::kVelocityX, Track::kVelocityX);
+      obstacle.twist.covariance[1] = track.covariance(Track::kVelocityX, Track::kVelocityY);
+      obstacle.twist.covariance[6] = track.covariance(Track::kVelocityY, Track::kVelocityX);
+      obstacle.twist.covariance[7] = track.covariance(Track::kVelocityY, Track::kVelocityY);
+
+      obstacle.size.x = track.size_x_m;
+      obstacle.size.y = track.size_y_m;
+      obstacle.size.z = 0.0;
+      obstacle.age = saturate_to_uint32(track.age);
+      obstacle.missed_frames = saturate_to_uint32(track.missed_frames);
+      // This is deliberately only an observation-freshness heuristic.  It is
+      // not a calibrated probability that this physical identity is correct.
+      obstacle.confidence = static_cast<float>(
+        1.0 / (1.0 + static_cast<double>(track.missed_frames)));
+    }
+
+    tracks_publisher_->publish(output);
+    if (message_count_ % 10U == 0U) {
+      RCLCPP_INFO(
+        get_logger(),
+        "published tracks | topic=/dynamic_obstacles/tracks | frame=%s | stamp=%d.%09u | count=%zu",
+        output.header.frame_id.c_str(),
+        static_cast<int>(output.header.stamp.sec),
+        static_cast<unsigned int>(output.header.stamp.nanosec),
+        output.obstacles.size());
+    }
+  }
+
   void initialize_debug_cv_state(
     const DebugClusterSelection & selection,
     const NaiveVelocityResult & velocity,
@@ -938,6 +1013,12 @@ private:
     const DeltaTimeResult delta_time = update_delta_time(current_stamp);
     const TrackLifecycleStats lifecycle_stats = update_track_lifecycle(
       *message, delta_time, current_stamp);
+    const bool can_publish_tracks = message->header.frame_id == "odom" &&
+      (delta_time.status == DeltaTimeStatus::kFirstMessage ||
+      delta_time.status == DeltaTimeStatus::kValid);
+    if (can_publish_tracks) {
+      publish_tracks(*message);
+    }
     const DebugClusterSelection debug_selection = select_debug_cluster(*message);
     const NaiveVelocityResult naive_velocity = update_naive_velocity(
       debug_selection, delta_time);
@@ -1030,6 +1111,8 @@ private:
 
   rclcpp::Subscription<predictive_nav_msgs::msg::ObstacleClusterArray>::SharedPtr
     cluster_subscription_;
+  rclcpp::Publisher<predictive_nav_msgs::msg::TrackedObstacleArray>::SharedPtr
+    tracks_publisher_;
   std::size_t message_count_{0U};
   // From step 11 onward, this is the real persistent track collection.  The
   // debug_cv_state_ below remains only as a teaching trace for steps 06--10.

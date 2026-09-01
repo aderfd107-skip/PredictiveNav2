@@ -25,7 +25,7 @@ PredictiveNav2 最终要实现：机器人用 2D LiDAR 发现并跟踪动态障�
 | AMCL + Nav2 DWB 静态导航 | 已完成 | 已知地图定位、全局规划、DWB 局部控制、RViz 发导航目标。 |
 | 动态障碍物 actor | 已完成 | 3 个可复位 Gazebo 方块，覆盖下方、中央、右上通道，可由 ROS 2 服务启停。 |
 | LiDAR 聚类/动态目标检测 | 已开始（已发布且可视化） | `predictive_nav_perception/scan_info_node` 已用 C++ 订阅 `/scan`、筛除无效量程、生成 `odom` 点并做顺序欧氏聚类，发布 `/dynamic_obstacles/clusters` 和仅调试用的 RViz MarkerArray；它仍只是几何候选观测，尚未判断动态性。 |
-| 多目标跟踪与 CV 卡尔曼滤波 | 已开始（真实 Track 生命周期已构建） | `predictive_nav_tracking/tracking_node` 已订阅 cluster、验证 `dt`，并实现 CV predict、距离 gate 内的贪心一对一关联、Kalman update、递增稳定 ID、新生与丢失删除。运行期验证待完成；尚未发布 `/dynamic_obstacles/tracks`，也未实现 Hungarian/Mahalanobis 或 Track 确认机制。 |
+| 多目标跟踪与 CV 卡尔曼滤波 | 已开始（正式 Track topic 已构建） | `predictive_nav_tracking/tracking_node` 已订阅 cluster、验证 `dt`，并实现 CV predict、距离 gate 内的贪心一对一关联、Kalman update、递增稳定 ID、新生与丢失删除；现已发布 `/dynamic_obstacles/tracks`。动态场景运行期验证待完成；尚未实现 Hungarian/Mahalanobis 或 Track 确认机制。 |
 | 轨迹预测 | 未开始 | 尚无未来位置和不确定性预测消息。 |
 | 原版 Nav2 MPPI baseline | 未开始 | 已安装相关依赖，但尚未配置和验证。 |
 | DynamicRiskCritic | 未开始 | 尚未实现自定义 MPPI critic。 |
@@ -46,6 +46,12 @@ ros2 launch predictive_nav_bringup nav_baseline.launch.py
 已完成一次端到端 smoke test：向 `/navigate_to_pose` 发送 `(5.8, -2.5)`，机器人从约 `(5.76, -3.80)` 行驶至约 `(5.81, -2.69)`，动作结果为 `SUCCEEDED`，恢复次数为 0。
 
 ## 变更记录
+
+### 2026-09-01 — 发布正式 Track ROS 接口
+
+- `predictive_nav_msgs` 新增 `TrackedObstacle` 与 `TrackedObstacleArray`；数组 header 保留共同的 `odom` frame 和测量时间，单条消息包含稳定 ID、二维位置/速度及其协方差、尺寸、age、missed count 和 confidence。
+- `tracking_node` 用 `SensorDataQoS` 发布 `/dynamic_obstacles/tracks`；只在 `odom` 且首帧/有效 `dt` 时输出，避免将未推进的旧状态伪装成当前测量时间。2D 未观测的 z、姿态、角速度等协方差设为大值，`confidence` 仅表示基于 miss 的观测新鲜程度，不是校准概率。
+- 验证：`colcon build --packages-up-to predictive_nav_tracking` 成功，`ros2 interface show` 已确认两条新消息生成；动态场景中的 topic echo 待用户按第 12 步运行确认。
 
 ### 2026-08-28 — 真实 Track 的新生与丢失管理
 

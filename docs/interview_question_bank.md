@@ -9,7 +9,7 @@
 截至本文更新：
 
 - 已完成并验证：`/scan` 过滤、时间戳 TF 到 `odom`、顺序欧氏聚类、`/dynamic_obstacles/clusters`、RViz cluster Marker；AMCL + DWB 静态导航基线。
-- 跟踪已构建并待运行验证：时间戳 `dt` 检查、CV predict、距离 gate 内的贪心一对一关联、Kalman update，以及真实 `tracks_` 的递增 ID、新生和丢失删除。**尚未**发布 `/dynamic_obstacles/tracks`，也没有 tentative/confirmed、Hungarian/Mahalanobis 或正式 benchmark。
+- 跟踪已构建并待运行验证：时间戳 `dt` 检查、CV predict、距离 gate 内的贪心一对一关联、Kalman update，以及真实 `tracks_` 的递增 ID、新生和丢失删除；已定义并发布 `/dynamic_obstacles/tracks`。仍没有 tentative/confirmed、Hungarian/Mahalanobis 或正式 benchmark。
 - 待完成：tracks 消息发布、轨迹预测消息、原版 MPPI 基线、`DynamicRiskCritic`、benchmark、真机验证。
 
 面试时可以说“我正在按该路线实现”，但不能把待完成部分说成现有成果。
@@ -160,6 +160,26 @@
 
 **方案取舍：** 贪心最近邻实现简单、计算轻，但在目标接近和交叉时更容易错；Hungarian 算法可得到全局一对一最小总代价分配。后续应在相同 rosbag 上比较二者的 ID switch、误匹配、漏匹配和运行时间，而不是先宣称某种方法“绝对正确”。
 
+### Q15-H：`max_missed_frames` 默认是 5，为什么还要把负参数钳制为 0？
+
+**回答核心：** `declare_parameter<int>("max_missed_frames", 5)` 中的 `5` 只是在用户没有传入参数时的默认值；启动时仍可用 `--ros-args -p max_missed_frames:=-3` 覆盖。`missed_frames` 是 `std::size_t`，表示帧数量，不能为负。若直接把负的有符号整数转为无符号数，会变成极大的正数，导致 Track 几乎永不过期。
+
+**当前处理：** 大于 0 的配置值才转为 `std::size_t`；0 或负数统一按 0 帧处理。这样 0 表示“第一次 miss 后即可删除”，不会出现无意义的负帧数。
+
+### Q15-I：单个 `ObstacleCluster` 为什么还要额外传入 `current_stamp`？
+
+**回答核心：** 时间戳不在单个 `ObstacleCluster` 内，而在外层 `ObstacleClusterArray.header.stamp`。一帧中的所有 cluster 都源自同一次 `/scan`，共享相同采样时间和 `odom` 坐标系，因此不应在每个 cluster 中重复保存相同 header。
+
+`make_new_track(cluster, current_stamp)` 的 `current_stamp` 不是电脑此刻的 wall-clock 时间，而是当前 cluster 帧的测量时间。新 Track 用它初始化 `first_observation_stamp` 和 `last_observation_stamp`；以后匹配成功时更新 `last_observation_stamp`。它为后续按秒判断轨迹陈旧、预测时间对齐和 rosbag 回放提供依据。
+
+### Q15-J：贪心一对一关联怎样从 `Candidate` 记录到最终匹配？
+
+**回答核心：** 嵌套循环先枚举所有 gate 内的候选对，并把当时的 `track_index`、`cluster_index`、`distance_m` 一起存进 `Candidate`；`std::sort` 只按距离重排这些完整对象，不会改变其中的两个下标。随后按从近到远逐项处理：若该 Track 和 cluster 都未被占用，就记录 `matched_cluster_for_track[track_index] = cluster_index`，并将该 cluster 标为已用。
+
+`matched_cluster_for_track` 用 `int` 而不是 `size_t`，因为它需要用 `-1` 表示“当前 Track 未匹配任何 cluster”。这条赋值语句只是记录已经接受的配对，不负责判断物理身份。
+
+**边界：** 先选局部最短 pair 的贪心策略不保证所有 Track 的总匹配代价最小；两个 cluster 靠近、交叉或遮挡时仍可能误认并导致 ID switch。
+
 ---
 
 ## D. 预测、MPPI 与动态风险（完成后再使用）
@@ -233,3 +253,16 @@
 已阅读用户提供的《解释C++结构体.pdf》后半部分，其中关于 CV 状态、假速度、数据关联、协方差、innovation、Kalman gain 与 Joseph Form 的可面试内容，已整理到 **Q10–Q15-G**。
 
 筛选时刻意没有把整段“公式推导课”搬进题库：面试重点应是你能否结合本项目说清楚它解决什么工程问题、代码在哪里实现、当前有什么边界、下一步如何验证。若面试官继续深挖，再展开公式和推导。
+
+## H. 已记录的后续跟踪优化计划（尚未开始实现）
+
+当前学习目录只有第 01–14 步；“第 15 步”不是现有章节，而是根据当前发现的 identity switch 风险新增的待办。不要把它说成已经实现。
+
+建议顺序：
+
+1. 先完成第 12–14 步：发布 Track、RViz 显示 ID/速度、录制并回放 rosbag；
+2. 用固定 rosbag 记录贪心 baseline 的 ID switch、误匹配、漏匹配和运行时间；
+3. 再新增 `15_关联鲁棒性升级与对比`：Mahalanobis gate、Hungarian 一对一分配、tentative/confirmed Track，以及同输入下的升级前后对比；
+4. 先完成第 03、04 模块的端到端仿真主链路，再在真机前依据 rosbag 证据决定升级范围；真机阶段重新标定 `Q/R/gate/max_missed_frames`，不把真机当作第一次排查关联问题的场所。
+
+**面试表达：** “我先用可解释的贪心 baseline 建立端到端链路和可复现 rosbag，再根据近距离交叉场景中的 ID switch 证据升级关联；不一开始堆复杂算法，也不把仿真参数直接当作真机参数。”

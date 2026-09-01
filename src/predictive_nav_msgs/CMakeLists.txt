@@ -12,6 +12,8 @@ find_package(std_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ObstacleCluster.msg"
   "msg/ObstacleClusterArray.msg"
+  "msg/TrackedObstacle.msg"
+  "msg/TrackedObstacleArray.msg"
   DEPENDENCIES geometry_msgs std_msgs
 )
 
