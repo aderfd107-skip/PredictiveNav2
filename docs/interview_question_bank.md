@@ -212,6 +212,30 @@
 
 **回答核心：** 真机存在真实 LiDAR 噪声、时间延迟、反光/遮挡、里程计误差、TF 标定、计算资源和安全限制；Gazebo 跑通只能证明系统在受控模型中可运行，不能证明真实部署可靠。
 
+### Q20-A：为什么 RViz 显示 `/map` 的 Topic 是 OK，却仍报 `No map received`？
+
+**回答核心：** `Topic: OK` 只代表 DDS 发现发布者和类型兼容，并不代表当前订阅者已经收到一条可显示的数据。`/map` 是静态地图，map server 用 transient-local durability 保留最后一份地图；若 RViz 在它发布后才加入、但订阅端使用 `Volatile`，便会发现 topic 却收不到历史地图。将 RViz Map 的 durability 改为 `Transient Local` 后，晚加入者也能立刻拿到地图。
+
+**项目证据：** 2026-09-02 的定位排错中，RViz `Map: No map received` 在改为 `Transient Local` 后立即恢复。该问题是 QoS/启动顺序问题，不是地图文件丢失。
+
+### Q20-B：小车中途停止时，怎样区分安全层急停、控制器未启动与 Nav2 任务失败？
+
+**回答核心：** 先查 action 状态，而不是只看最终速度。`/controller_server` 为 `active [3]` 仅说明节点已进入可工作状态；`/navigate_to_pose/_action/status = 6` 表示这一次任务已 ABORTED。项目日志曾出现 `Timed out while waiting for action server to acknowledge goal request for compute_path_to_pose`，随后 BT navigator 取消 FollowPath，控制器停止机器人，因此 `/cmd_vel_safe` 变为全零是结果而不是第一原因。
+
+**排查顺序：** action status → launch 中 `bt_navigator`/`planner_server` 日志 → `/cmd_vel` 与 `/cmd_vel_safe` → lifecycle 状态。不要把“安全输出为零”直接误判为 LiDAR 安全层必然触发。
+
+### Q20-C：`/odom`、`/amcl_pose` 和 `map → odom` 数值不同，怎样判断是不是定位错误？
+
+**回答核心：** `/odom` 在 `odom` frame，`/amcl_pose` 在 `map` frame，原始数值不能直接相减。应使用 `map → odom` 将前者转换到 map 后再比较；三者数学自洽只说明 TF 链内部一致，不证明 AMCL 选择了真实地点。还要看 scan 墙体是否贴合静态地图，并利用已知仿真出生点或 Gazebo 真值做外部验证。
+
+**工程取舍：** 已知仿真出生点时，项目在 AMCL active 后发布窄协方差的 `/initialpose`，并对未建图的动态 actor 启用 beam skipping；真机必须按真实初始误差与传感器/里程计噪声重设这些参数。
+
+### Q20-D：RViz 不显示 cluster Marker，是否说明 C++ 聚类算法没有运行？
+
+**回答核心：** 不一定。RViz 的显示项只是订阅某个 ROS 话题的客户端；Marker 不显示可能是算法没运行，也可能是 display 被禁用、类型不对、namespace 被关闭或 Topic 写错。项目曾因 RViz 保存配置时将 `MarkerArray` 的 Topic 写成默认 `visualization_marker_array`，而节点实际发布 `/dynamic_obstacles/cluster_markers`，导致算法仍在运行却没有青色 cluster。
+
+**排查顺序：** 先用 `ros2 topic info /dynamic_obstacles/cluster_markers` 看 Publisher count；有 Publisher 时检查 RViz Topic/Enabled/namespace，无 Publisher 才检查 `scan_info_node` 是否启动。这样避免把“可视化配置错误”误判成“感知算法故障”。
+
 ### Q21：怎样证明 DynamicRiskCritic 有效？
 
 **回答核心：** 用相同地图、起终点、actor 路线、速度和重复次数，对比原版 MPPI 与动态风险方案；记录到达率、碰撞/近碰、最小距离、耗时、路径长度、急停或不必要等待。不能只展示一段成功视频。

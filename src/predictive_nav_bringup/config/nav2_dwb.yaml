@@ -3,17 +3,27 @@
 amcl:
   ros__parameters:
     use_sim_time: true
-    alpha1: 0.2
-    alpha2: 0.2
-    alpha3: 0.2
-    alpha4: 0.2
-    alpha5: 0.2
+    # Gazebo's /odom is generated from the simulated robot pose, so it is
+    # substantially less noisy than real wheel odometry.  Keep a small,
+    # non-zero motion uncertainty here; hardware must be re-tuned later.
+    alpha1: 0.02
+    alpha2: 0.02
+    alpha3: 0.02
+    alpha4: 0.02
+    alpha5: 0.02
     base_frame_id: base_footprint
     global_frame_id: map
     odom_frame_id: odom
     robot_model_type: nav2_amcl::DifferentialMotionModel
     scan_topic: /scan
     set_initial_pose: false
+    # The dynamic actors are deliberately absent from the saved static map.
+    # Beam skipping prevents a small number of such unmatched beams from
+    # pulling AMCL toward an incorrect pose hypothesis.
+    do_beamskip: true
+    beam_skip_distance: 0.5
+    beam_skip_threshold: 0.3
+    beam_skip_error_threshold: 0.9
     tf_broadcast: true
     transform_tolerance: 1.0
     update_min_a: 0.10

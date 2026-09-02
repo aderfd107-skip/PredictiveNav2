@@ -2,8 +2,10 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <iomanip>
 #include <limits>
 #include <memory>
+#include <sstream>
 #include <vector>
 
 #include <Eigen/Cholesky>
@@ -12,6 +14,8 @@
 #include "predictive_nav_msgs/msg/obstacle_cluster_array.hpp"
 #include "predictive_nav_msgs/msg/tracked_obstacle_array.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "visualization_msgs/msg/marker.hpp"
+#include "visualization_msgs/msg/marker_array.hpp"
 
 namespace predictive_nav
 {
@@ -148,6 +152,8 @@ public:
       });
     tracks_publisher_ = create_publisher<predictive_nav_msgs::msg::TrackedObstacleArray>(
       "/dynamic_obstacles/tracks", rclcpp::SensorDataQoS());
+    track_markers_publisher_ = create_publisher<visualization_msgs::msg::MarkerArray>(
+      "/dynamic_obstacles/track_markers", rclcpp::QoS(10));
 
     RCLCPP_INFO(
       get_logger(),
@@ -168,6 +174,9 @@ public:
     RCLCPP_INFO(
       get_logger(),
       "Real Track states will be published on /dynamic_obstacles/tracks with SensorDataQoS.");
+    RCLCPP_INFO(
+      get_logger(),
+      "RViz-only Track markers will be published on /dynamic_obstacles/track_markers.");
   }
 
 private:
@@ -583,8 +592,9 @@ private:
 
     // PoseWithCovariance/TwistWithCovariance are standard 3D ROS messages.
     // Our 2D LiDAR tracker does not observe z, roll, pitch, yaw, vz or angular
-    // velocity, so those fields are set to zero with deliberately large
-    // variances rather than pretending they are known accurately.
+    // velocity.  Only their *diagonal variances* are made large; cross terms
+    // stay zero because “unobserved” does not imply a huge correlation with
+    // x/y or vx/vy.
     constexpr double kUnobservedVariance = 1.0e6;
     for (const Track & track : tracks_) {
       auto & obstacle = output.obstacles.emplace_back();
@@ -594,7 +604,11 @@ private:
       obstacle.pose.pose.position.y = track.state(Track::kPositionY);
       obstacle.pose.pose.position.z = 0.0;
       obstacle.pose.pose.orientation.w = 1.0;
-      obstacle.pose.covariance.fill(kUnobservedVariance);
+      obstacle.pose.covariance.fill(0.0);
+      // 6x6 row-major diagonal: z(2,2), roll(3,3), pitch(4,4), yaw(5,5).
+      for (const std::size_t index : {2U, 3U, 4U, 5U}) {
+        obstacle.pose.covariance[index * 6U + index] = kUnobservedVariance;
+      }
       // ROS covariance arrays are 6x6 row-major: x/y are positions 0/1.
       obstacle.pose.covariance[0] = track.covariance(Track::kPositionX, Track::kPositionX);
       obstacle.pose.covariance[1] = track.covariance(Track::kPositionX, Track::kPositionY);
@@ -604,7 +618,11 @@ private:
       obstacle.twist.twist.linear.x = track.state(Track::kVelocityX);
       obstacle.twist.twist.linear.y = track.state(Track::kVelocityY);
       obstacle.twist.twist.linear.z = 0.0;
-      obstacle.twist.covariance.fill(kUnobservedVariance);
+      obstacle.twist.covariance.fill(0.0);
+      // 6x6 row-major diagonal: vz(2,2), wx(3,3), wy(4,4), wz(5,5).
+      for (const std::size_t index : {2U, 3U, 4U, 5U}) {
+        obstacle.twist.covariance[index * 6U + index] = kUnobservedVariance;
+      }
       // In TwistWithCovariance, vx/vy are entries 0/1 in the same layout.
       obstacle.twist.covariance[0] = track.covariance(Track::kVelocityX, Track::kVelocityX);
       obstacle.twist.covariance[1] = track.covariance(Track::kVelocityX, Track::kVelocityY);
@@ -632,6 +650,111 @@ private:
         static_cast<unsigned int>(output.header.stamp.nanosec),
         output.obstacles.size());
     }
+  }
+
+  void publish_track_markers(
+    const predictive_nav_msgs::msg::ObstacleClusterArray & cluster_frame)
+  {
+    // These Markers are a visual explanation of the public tracks topic.
+    // Prediction modules must consume /dynamic_obstacles/tracks instead;
+    // MarkerArray is intentionally a debug-only interface for RViz.
+    visualization_msgs::msg::MarkerArray output;
+    visualization_msgs::msg::Marker clear_previous;
+    clear_previous.action = visualization_msgs::msg::Marker::DELETEALL;
+    output.markers.push_back(clear_previous);
+
+    constexpr double kBoxLineWidthM = 0.045;
+    constexpr double kVelocityArrowSeconds = 0.70;
+    constexpr double kMaximumArrowLengthM = 1.20;
+    constexpr double kMinimumArrowSpeedMps = 0.03;
+
+    for (const Track & track : tracks_) {
+      const bool observed_this_frame = track.missed_frames == 0U;
+      const float red = observed_this_frame ? 0.15F : 1.00F;
+      const float green = observed_this_frame ? 1.00F : 0.55F;
+      const float blue = observed_this_frame ? 0.25F : 0.05F;
+      const int marker_id = static_cast<int>(track.track_id);
+      const double x = track.state(Track::kPositionX);
+      const double y = track.state(Track::kPositionY);
+      const double half_x = std::max(0.05, track.size_x_m * 0.5);
+      const double half_y = std::max(0.05, track.size_y_m * 0.5);
+
+      visualization_msgs::msg::Marker box;
+      box.header = cluster_frame.header;
+      box.ns = "tracked_obstacle_box";
+      box.id = marker_id;
+      box.type = visualization_msgs::msg::Marker::LINE_STRIP;
+      box.action = visualization_msgs::msg::Marker::ADD;
+      box.scale.x = kBoxLineWidthM;
+      box.color.r = red;
+      box.color.g = green;
+      box.color.b = blue;
+      box.color.a = 1.0F;
+      box.pose.orientation.w = 1.0;
+      box.points.resize(5U);
+      box.points[0].x = x - half_x;
+      box.points[0].y = y - half_y;
+      box.points[1].x = x + half_x;
+      box.points[1].y = y - half_y;
+      box.points[2].x = x + half_x;
+      box.points[2].y = y + half_y;
+      box.points[3].x = x - half_x;
+      box.points[3].y = y + half_y;
+      box.points[4] = box.points[0];
+      output.markers.push_back(box);
+
+      const double velocity_x = track.state(Track::kVelocityX);
+      const double velocity_y = track.state(Track::kVelocityY);
+      const double speed_mps = std::hypot(velocity_x, velocity_y);
+      if (speed_mps >= kMinimumArrowSpeedMps) {
+        const double arrow_length = std::min(
+          kMaximumArrowLengthM, speed_mps * kVelocityArrowSeconds);
+        visualization_msgs::msg::Marker arrow;
+        arrow.header = cluster_frame.header;
+        arrow.ns = "tracked_obstacle_velocity";
+        arrow.id = marker_id;
+        arrow.type = visualization_msgs::msg::Marker::ARROW;
+        arrow.action = visualization_msgs::msg::Marker::ADD;
+        arrow.scale.x = 0.045;
+        arrow.scale.y = 0.10;
+        arrow.scale.z = 0.13;
+        arrow.color.r = 1.0F;
+        arrow.color.g = 0.95F;
+        arrow.color.b = 0.10F;
+        arrow.color.a = 1.0F;
+        arrow.points.resize(2U);
+        arrow.points[0].x = x;
+        arrow.points[0].y = y;
+        arrow.points[0].z = 0.08;
+        arrow.points[1].x = x + arrow_length * velocity_x / speed_mps;
+        arrow.points[1].y = y + arrow_length * velocity_y / speed_mps;
+        arrow.points[1].z = 0.08;
+        output.markers.push_back(arrow);
+      }
+
+      visualization_msgs::msg::Marker label;
+      label.header = cluster_frame.header;
+      label.ns = "tracked_obstacle_label";
+      label.id = marker_id;
+      label.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+      label.action = visualization_msgs::msg::Marker::ADD;
+      label.pose.position.x = x;
+      label.pose.position.y = y;
+      label.pose.position.z = 0.35;
+      label.pose.orientation.w = 1.0;
+      label.scale.z = 0.24;
+      label.color.r = red;
+      label.color.g = green;
+      label.color.b = blue;
+      label.color.a = 1.0F;
+      std::ostringstream text;
+      text << "ID " << track.track_id << " | v=" << std::fixed << std::setprecision(2)
+           << speed_mps << " m/s | miss=" << track.missed_frames;
+      label.text = text.str();
+      output.markers.push_back(label);
+    }
+
+    track_markers_publisher_->publish(output);
   }
 
   void initialize_debug_cv_state(
@@ -1018,6 +1141,7 @@ private:
       delta_time.status == DeltaTimeStatus::kValid);
     if (can_publish_tracks) {
       publish_tracks(*message);
+      publish_track_markers(*message);
     }
     const DebugClusterSelection debug_selection = select_debug_cluster(*message);
     const NaiveVelocityResult naive_velocity = update_naive_velocity(
@@ -1113,6 +1237,8 @@ private:
     cluster_subscription_;
   rclcpp::Publisher<predictive_nav_msgs::msg::TrackedObstacleArray>::SharedPtr
     tracks_publisher_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr
+    track_markers_publisher_;
   std::size_t message_count_{0U};
   // From step 11 onward, this is the real persistent track collection.  The
   // debug_cv_state_ below remains only as a teaching trace for steps 06--10.

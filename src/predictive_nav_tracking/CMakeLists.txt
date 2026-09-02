@@ -6,6 +6,7 @@ find_package(ament_cmake REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(predictive_nav_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(visualization_msgs REQUIRED)
 
 # The tracking node now receives cluster observations.  Later steps extend
 # this same executable with track state, association and Kalman filtering.
@@ -14,6 +15,7 @@ target_compile_features(tracking_node PUBLIC cxx_std_17)
 ament_target_dependencies(tracking_node
   predictive_nav_msgs
   rclcpp
+  visualization_msgs
 )
 target_link_libraries(tracking_node Eigen3::Eigen)
 

@@ -4,6 +4,8 @@
 import math
 
 from geometry_msgs.msg import PoseWithCovarianceStamped
+from lifecycle_msgs.msg import State
+from lifecycle_msgs.srv import GetState
 from nav_msgs.msg import OccupancyGrid
 import rclpy
 from rclpy.node import Node
@@ -25,6 +27,8 @@ class InitialPosePublisher(Node):
         self.declare_parameter("xy_tolerance", 0.20)
         self.declare_parameter("yaw_tolerance", 0.35)
         self.declare_parameter("required_stable_count", 3)
+        self.declare_parameter("initial_xy_stddev", 0.05)
+        self.declare_parameter("initial_yaw_stddev", math.radians(3.0))
         self.declare_parameter("map_topic", "/map")
         self.declare_parameter("scan_topic", "/scan")
         self.declare_parameter("amcl_pose_topic", "/amcl_pose")
@@ -40,6 +44,12 @@ class InitialPosePublisher(Node):
         self.required_stable_count = max(
             1, int(self.get_parameter("required_stable_count").value)
         )
+        self.initial_xy_stddev = max(
+            0.001, float(self.get_parameter("initial_xy_stddev").value)
+        )
+        self.initial_yaw_stddev = max(
+            0.001, float(self.get_parameter("initial_yaw_stddev").value)
+        )
 
         map_qos = QoSProfile(depth=1)
         map_qos.reliability = ReliabilityPolicy.RELIABLE
@@ -48,6 +58,7 @@ class InitialPosePublisher(Node):
         scan_qos.reliability = ReliabilityPolicy.BEST_EFFORT
 
         self.pose_pub = self.create_publisher(PoseWithCovarianceStamped, "/initialpose", 10)
+        self.amcl_state_client = self.create_client(GetState, "/amcl/get_state")
         self.create_subscription(
             OccupancyGrid, self.get_parameter("map_topic").value, self._on_map, map_qos
         )
@@ -63,6 +74,8 @@ class InitialPosePublisher(Node):
 
         self.map_received = False
         self.scan_received = False
+        self.amcl_is_active = False
+        self.amcl_state_request_inflight = False
         self.delay_elapsed = False
         self.publish_started = False
         self.initial_pose_confirmed = False
@@ -79,7 +92,7 @@ class InitialPosePublisher(Node):
         self.readiness_timer = self.create_timer(0.5, self._try_start_publishing)
 
         self.get_logger().info(
-            "Waiting for /map and /scan before setting AMCL initial pose at "
+            "Waiting for /map, /scan, and an active AMCL before setting initial pose at "
             f"({self.target_x:.2f}, {self.target_y:.2f}, {self.target_yaw:.2f} rad)."
         )
 
@@ -99,9 +112,32 @@ class InitialPosePublisher(Node):
             return
         if not self.map_received or not self.scan_received:
             return
+        if not self.amcl_is_active:
+            self._request_amcl_state()
+            return
         self.publish_started = True
         self._publish_initial_pose()
         self.publish_timer = self.create_timer(self.publish_period, self._publish_initial_pose)
+
+    def _request_amcl_state(self):
+        """Check lifecycle state without assuming a fixed startup delay."""
+        if self.amcl_state_request_inflight or not self.amcl_state_client.service_is_ready():
+            return
+        self.amcl_state_request_inflight = True
+        future = self.amcl_state_client.call_async(GetState.Request())
+        future.add_done_callback(self._on_amcl_state)
+
+    def _on_amcl_state(self, future):
+        self.amcl_state_request_inflight = False
+        try:
+            response = future.result()
+        except Exception as error:  # Service can disappear during launch shutdown.
+            self.get_logger().debug(f"Could not query AMCL lifecycle state: {error}")
+            return
+
+        self.amcl_is_active = response.current_state.id == State.PRIMARY_STATE_ACTIVE
+        if self.amcl_is_active:
+            self.get_logger().info("AMCL is active; starting automatic initial-pose publication.")
 
     def _publish_initial_pose(self):
         if self.initial_pose_confirmed:
@@ -122,9 +158,13 @@ class InitialPosePublisher(Node):
         message.pose.pose.position.y = self.target_y
         message.pose.pose.orientation.z = math.sin(self.target_yaw * 0.5)
         message.pose.pose.orientation.w = math.cos(self.target_yaw * 0.5)
-        message.pose.covariance[0] = 0.25
-        message.pose.covariance[7] = 0.25
-        message.pose.covariance[35] = 0.06853891945200942
+        # This is a known Gazebo spawn pose, not a human-provided rough guess.
+        # A narrow prior avoids AMCL selecting a visually similar corridor at
+        # startup.  On hardware these values must be widened to match how the
+        # initial pose is actually obtained.
+        message.pose.covariance[0] = self.initial_xy_stddev ** 2
+        message.pose.covariance[7] = self.initial_xy_stddev ** 2
+        message.pose.covariance[35] = self.initial_yaw_stddev ** 2
         self.pose_pub.publish(message)
         self.attempt_count += 1
         self.get_logger().info(

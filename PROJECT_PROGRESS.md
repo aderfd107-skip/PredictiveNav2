@@ -25,7 +25,7 @@ PredictiveNav2 最终要实现：机器人用 2D LiDAR 发现并跟踪动态障�
 | AMCL + Nav2 DWB 静态导航 | 已完成 | 已知地图定位、全局规划、DWB 局部控制、RViz 发导航目标。 |
 | 动态障碍物 actor | 已完成 | 3 个可复位 Gazebo 方块，覆盖下方、中央、右上通道，可由 ROS 2 服务启停。 |
 | LiDAR 聚类/动态目标检测 | 已开始（已发布且可视化） | `predictive_nav_perception/scan_info_node` 已用 C++ 订阅 `/scan`、筛除无效量程、生成 `odom` 点并做顺序欧氏聚类，发布 `/dynamic_obstacles/clusters` 和仅调试用的 RViz MarkerArray；它仍只是几何候选观测，尚未判断动态性。 |
-| 多目标跟踪与 CV 卡尔曼滤波 | 已开始（正式 Track topic 已构建） | `predictive_nav_tracking/tracking_node` 已订阅 cluster、验证 `dt`，并实现 CV predict、距离 gate 内的贪心一对一关联、Kalman update、递增稳定 ID、新生与丢失删除；现已发布 `/dynamic_obstacles/tracks`。动态场景运行期验证待完成；尚未实现 Hungarian/Mahalanobis 或 Track 确认机制。 |
+| 多目标跟踪与 CV 卡尔曼滤波 | 已开始（Track topic 与 RViz 调试 Marker 已构建） | `predictive_nav_tracking/tracking_node` 已订阅 cluster、验证 `dt`，并实现 CV predict、距离 gate 内的贪心一对一关联、Kalman update、递增稳定 ID、新生与丢失删除；现已发布 `/dynamic_obstacles/tracks` 和只供人眼验证的 `/dynamic_obstacles/track_markers`。动态场景运行期验证待完成；尚未实现 Hungarian/Mahalanobis、Track 确认机制或动态性分类。 |
 | 轨迹预测 | 未开始 | 尚无未来位置和不确定性预测消息。 |
 | 原版 Nav2 MPPI baseline | 未开始 | 已安装相关依赖，但尚未配置和验证。 |
 | DynamicRiskCritic | 未开始 | 尚未实现自定义 MPPI critic。 |
@@ -50,14 +50,15 @@ ros2 launch predictive_nav_bringup nav_baseline.launch.py
 ### 2026-09-01 — 发布正式 Track ROS 接口
 
 - `predictive_nav_msgs` 新增 `TrackedObstacle` 与 `TrackedObstacleArray`；数组 header 保留共同的 `odom` frame 和测量时间，单条消息包含稳定 ID、二维位置/速度及其协方差、尺寸、age、missed count 和 confidence。
-- `tracking_node` 用 `SensorDataQoS` 发布 `/dynamic_obstacles/tracks`；只在 `odom` 且首帧/有效 `dt` 时输出，避免将未推进的旧状态伪装成当前测量时间。2D 未观测的 z、姿态、角速度等协方差设为大值，`confidence` 仅表示基于 miss 的观测新鲜程度，不是校准概率。
+- `tracking_node` 用 `SensorDataQoS` 发布 `/dynamic_obstacles/tracks`；只在 `odom` 且首帧/有效 `dt` 时输出，避免将未推进的旧状态伪装成当前测量时间。2D 未观测的 z、姿态、角速度等协方差仅在对应对角线设为大值，未知交叉协方差保持 0；`confidence` 仅表示基于 miss 的观测新鲜程度，不是校准概率。
+- `tracking_node` 新增 RViz-only `/dynamic_obstacles/track_markers`：绿色/橙色方框表示本帧命中/暂时 missed 的 Track，黄色箭头表示滤波速度，文字显示 ID、速度和 miss。Marker 只用于调试；第 03 模块必须订阅正式 tracks 消息而非 Marker。
 - 验证：`colcon build --packages-up-to predictive_nav_tracking` 成功，`ros2 interface show` 已确认两条新消息生成；动态场景中的 topic echo 待用户按第 12 步运行确认。
 
 ### 2026-08-28 — 真实 Track 的新生与丢失管理
 
 - `tracking_node` 开始维护真实 `tracks_`：对有效 `odom` cluster 帧，先预测全部 Track，再做距离 gate 内的贪心一对一匹配；匹配成功执行 Kalman update，未匹配旧 Track 增加 `missed_frames`，未匹配有效 cluster 创建递增 ID 的新 Track。
 - 新 Track 的初始速度固定为 `(0, 0)`，但初始速度协方差保持较大，不再把单目标差分速度作为正式轨迹速度；当 `missed_frames > max_missed_frames`（默认 5）时，才删除 Track。
-- 明确边界：这是可解释的距离贪心 baseline，不保证目标交叉/遮挡中的身份不切换；尚无 tentative/confirmed 状态、动态性分类、Hungarian/Mahalanobis、tracks topic 或 RViz Track Marker。
+- 明确边界：这是可解释的距离贪心 baseline，不保证目标交叉/遮挡中的身份不切换；尚无 tentative/confirmed 状态、动态性分类、Hungarian/Mahalanobis 或运行期 benchmark。正式 tracks topic 与 RViz Track Marker 已提供，但它们不等于关联鲁棒性已经解决。
 - 验证：`colcon build --packages-select predictive_nav_tracking` 成功；动态场景中的 ID 持续性和丢失行为待用户按第 11 步运行确认。
 
 ### 2026-08-28 — 用匹配 LiDAR 测量更新教学 CV 状态

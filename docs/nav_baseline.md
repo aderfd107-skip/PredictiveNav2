@@ -2,6 +2,8 @@
 
 该入口是 PredictiveNav2 的非预测对照组：在保存的 `dynamic_navigation_lab` 地图中使用 AMCL 定位，并以 DWB 执行 Nav2 导航。它不订阅或发布任何动态障碍物预测；后续原版 MPPI 与 `DynamicRiskCritic` 实验必须沿用相同地图、起点、目标和速度上限。
 
+> 启动定位保护：仿真出生位姿已知。自动初始位姿节点会同时等待 `/map`、`/scan` 和 AMCL 生命周期进入 `active`，再以较小协方差发布 `/initialpose`；AMCL 还启用了 beam skipping，以减少未写入静态地图的动态 actor 对定位的干扰。它们只适用于这个已知出生点的仿真基线，真机必须按实际初始定位误差和轮式里程计噪声重新标定。
+
 ## 启动
 
 先安装 Jazzy 的 Navigation2（至少包含 AMCL、DWB、planner、behavior、BT navigator 和 lifecycle manager），然后构建工作区：
@@ -13,7 +15,7 @@ source install/setup.bash
 ros2 launch predictive_nav_bringup nav_baseline.launch.py
 ```
 
-默认在 `(5.8, -3.85, 1.5708)` 生成机器人，使用 `dynamic_navigation_lab.yaml`。初始位姿节点会等待 `/map` 与 `/scan`，然后发布 `/initialpose`，并在 `/amcl_pose` 连续满足位置与朝向阈值后停止。
+默认在 `(5.8, -3.85, 1.5708)` 生成机器人，使用 `dynamic_navigation_lab.yaml`。初始位姿节点会等待 `/map`、`/scan` 与 AMCL 进入 `active`，然后发布 `/initialpose`，并在 `/amcl_pose` 连续满足位置与朝向阈值后停止。终端应依次出现 `AMCL is active`、`Published AMCL initial pose` 和 `AMCL initial pose alignment confirmed`，再发送导航目标。
 
 ## 验收
 

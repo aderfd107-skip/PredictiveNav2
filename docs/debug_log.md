@@ -454,3 +454,77 @@ ros2 launch predictive_nav_bringup nav_baseline.launch.py
 1. RViz 工具显示在工具栏上，不等于它已具备完整的 ROS 执行链路；应确认对应 panel、action client 或 topic publisher 是否同时存在。
 2. 遇到“点击目标却不动”时，按顺序检查：动作是否到达 → 是否生成 `/plan` → 是否产生 `/cmd_vel` → `/cmd_vel_safe` 是否被过滤 → Gazebo 是否接收。
 3. 已知出生位姿的静态 AMCL baseline 应自动初始化；不要把 `2D Pose Estimate` 当作常规导航步骤。
+
+---
+
+### 2026-09-02：AMCL 启动错位导致激光偏图、Nav2 中止
+
+#### 现象
+
+- 多次重启 `nav_baseline.launch.py` 后，RViz 有时显示 `Map: No map received`；`/map` 的 Topic 行仍显示 `OK`。
+- 手工将 RViz Map 的 QoS durability 改为 `Transient Local` 后，地图立刻出现；但某次运行中红色 `/scan` 点整体偏离黑色静态墙体。
+- 小车运行到一半停止，`/navigate_to_pose/_action/status` 为 `6`（ABORTED）。launch 终端出现：`Timed out while waiting for action server to acknowledge goal request for compute_path_to_pose`，随后 BT navigator 取消 FollowPath。
+- `/cmd_vel_safe` 虽输出全零，但这是导航动作已中止后的结果，不能直接归因于 `scan_safety_guard` 或 tracking 模块。
+
+#### 排查证据
+
+1. `/odom` 与 `/scan` 均只有一个 Publisher，排除重新启动后多个 Gazebo bridge/传感器源抢同一话题。
+2. `tf2_echo map odom` 已持续输出；将它与 `/odom`、`/amcl_pose` 对照可验证三者数学上自洽。**自洽不等于定位正确**：AMCL 仍可能把整套 `odom` 坐标系对齐到静态地图中的错误位置，导致 scan 整体错位。
+3. 该仿真中机器人出生点已知，而原始流程只依赖固定启动延迟，初始 `/initialpose` 的位置标准差为 0.5 m、朝向标准差约 15°；AMCL 可能在 map/scan/lifecycle 尚未完全就绪或存在动态 actor 未建图激光束时，落入错误匹配假设。
+
+#### 修复
+
+- 将 RViz `Map` 的 `/map` QoS durability 固定为 `Transient Local`。静态地图由 map server 保留最后一条消息；RViz 以 `Volatile` 作为晚加入者时会发现 topic、却拿不到历史地图。
+- `publish_initial_pose.py` 不再只等待 `/map` 与 `/scan`；它通过 `/amcl/get_state` 确认 AMCL lifecycle 为 `active` 后才开始发布初始位姿。
+- 针对已知 Gazebo 出生点，将初始协方差收紧至位置标准差 0.05 m、朝向标准差 3°；这是仿真先验，真机不可照搬。
+- AMCL 使用较小的仿真里程计噪声 `alpha1...alpha5 = 0.02`，并开启 beam skipping，使地图中不存在的动态 actor 不会用少量不匹配激光束拉偏定位。
+
+#### 验证结论
+
+修复并重新构建 `predictive_nav_bringup` 后，用户确认重复启动不再出现 AMCL 造成的激光/地图错位，也不再出现由该错误定位触发的小车中途卡住。后续真机需重新标定初始位姿协方差、里程计噪声与 beam skipping 参数。
+
+#### 经验总结
+
+1. `Topic: OK` 只说明 DDS 发现了话题，不保证订阅者已经收到一条可显示的历史消息；静态 map 需要正确的 transient-local QoS。
+2. `active [3]` 表示 Nav2 节点的生命周期正常；action `status: 6` 才表示这一次具体导航任务已经失败。两者并不矛盾。
+3. 看见 `map -> odom` 持续发布只能证明 TF 链存在，不能证明 AMCL 的地图定位正确；必须以激光墙体是否贴合地图、以及 Gazebo 真值/已知出生点为准。
+4. 已知仿真出生点适合使用窄初始先验来建立稳定 baseline；真机则必须承认初始误差并用实测数据重新调参。
+
+---
+
+### 2026-09-02：RViz 不显示青色 cluster，但 C++ 聚类节点未关闭
+
+#### 现象
+
+- 重启/重新加载 RViz 后，之前用于验证 LiDAR 聚类的青色方框、中心点不再显示。
+- 容易误以为 `scan_info_node`、聚类代码或 `/scan` 出现故障。
+
+#### 根因
+
+`Scan-Derived Clusters (Debug)` 是 RViz 的 `MarkerArray` display。RViz 配置在图形界面中被保存后，其 Topic 被意外写成默认值 `visualization_marker_array`；但 C++ 节点实际发布的是：
+
+```text
+/dynamic_obstacles/cluster_markers
+```
+
+因此聚类节点可以继续正常运行，RViz 却在订阅一个没有发布者的错误话题。
+
+#### 修复与验证
+
+- 将 `src/predictive_nav_bringup/rviz/nav_baseline.rviz` 中该 MarkerArray 的 Topic 固定为 `/dynamic_obstacles/cluster_markers`，并重新构建 `predictive_nav_bringup`。
+- 已打开的 RViz 不会自动读取新配置；可在 `Scan-Derived Clusters (Debug) → Topic` 中手动改为该值，正确时青色 Marker 会立刻恢复。
+- 用以下命令区分“显示订阅错”与“节点未运行”：
+
+```bash
+ros2 topic info /dynamic_obstacles/cluster_markers
+```
+
+`Publisher count: 1` 表示感知节点正在发布，此时优先检查 RViz 的 display 类型、Topic 和 Enabled 状态；若为 `0`，才检查是否启动了：
+
+```bash
+ros2 run predictive_nav_perception scan_info_node
+```
+
+#### 经验总结
+
+可视化缺失不是算法失败的充分证据。排查顺序应是：节点/进程是否存在 → 正确话题是否有 Publisher → RViz display 类型与 Topic 是否一致 → Marker namespace 是否被禁用。
