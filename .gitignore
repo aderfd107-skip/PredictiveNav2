@@ -2,6 +2,11 @@ build/
 install/
 log/
 
+# rosbag recordings can become very large. Keep experiment metadata/notes in
+# Git, but keep raw runtime recordings local (or upload them to dedicated
+# storage rather than the source repository).
+bags/
+
 __pycache__/
 *.py[cod]
 

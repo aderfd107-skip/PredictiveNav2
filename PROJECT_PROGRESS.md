@@ -51,7 +51,7 @@ ros2 launch predictive_nav_bringup nav_baseline.launch.py
 
 - `predictive_nav_msgs` 新增 `TrackedObstacle` 与 `TrackedObstacleArray`；数组 header 保留共同的 `odom` frame 和测量时间，单条消息包含稳定 ID、二维位置/速度及其协方差、尺寸、age、missed count 和 confidence。
 - `tracking_node` 用 `SensorDataQoS` 发布 `/dynamic_obstacles/tracks`；只在 `odom` 且首帧/有效 `dt` 时输出，避免将未推进的旧状态伪装成当前测量时间。2D 未观测的 z、姿态、角速度等协方差仅在对应对角线设为大值，未知交叉协方差保持 0；`confidence` 仅表示基于 miss 的观测新鲜程度，不是校准概率。
-- `tracking_node` 新增 RViz-only `/dynamic_obstacles/track_markers`：绿色/橙色方框表示本帧命中/暂时 missed 的 Track，黄色箭头表示滤波速度，文字显示 ID、速度和 miss。Marker 只用于调试；第 03 模块必须订阅正式 tracks 消息而非 Marker。
+- `tracking_node` 新增 RViz-only `/dynamic_obstacles/track_markers`：绿色/橙色方框表示本帧命中/暂时 missed 的 Track，黄色箭头表示滤波速度，文字显示 ID、速度和 miss。默认只显示速度不小于 `0.10 m/s` 的运动候选，避免静态墙体 Track 淹没画面；该阈值只是可视化筛选，正式 `/dynamic_obstacles/tracks` 不会丢弃低速 Track。第 03 模块必须订阅正式 tracks 消息而非 Marker。
 - 验证：`colcon build --packages-up-to predictive_nav_tracking` 成功，`ros2 interface show` 已确认两条新消息生成；动态场景中的 topic echo 待用户按第 12 步运行确认。
 
 ### 2026-08-28 — 真实 Track 的新生与丢失管理

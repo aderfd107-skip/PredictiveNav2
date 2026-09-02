@@ -138,6 +138,8 @@ public:
     association_gate_m_ = declare_parameter<double>("association_gate_m", 0.40);
     measurement_position_stddev_m_ = declare_parameter<double>(
       "measurement_position_stddev_m", 0.15);
+    track_marker_min_speed_mps_ = std::max(0.0, declare_parameter<double>(
+        "track_marker_min_speed_mps", 0.10));
     const std::int64_t configured_max_missed_frames =
       declare_parameter<int>("max_missed_frames", 5);
     max_missed_frames_ = configured_max_missed_frames > 0 ?
@@ -160,7 +162,8 @@ public:
       "Waiting for obstacle-cluster messages on /dynamic_obstacles/clusters; "
       "accepting dt in (0, %.2f] s. Single-target debug reference=(%.2f, %.2f) m, max distance=%.2f m. "
       "Initial CV stddev=(position=%.2f m, velocity=%.2f m/s), max seed speed=%.2f m/s, "
-      "association gate=%.2f m, measurement position stddev=%.2f m, max missed frames=%zu.",
+      "association gate=%.2f m, measurement position stddev=%.2f m, max missed frames=%zu, "
+      "RViz marker minimum speed=%.2f m/s.",
       max_dt_s_,
       debug_target_x_m_,
       debug_target_y_m_,
@@ -170,7 +173,8 @@ public:
       debug_max_initial_speed_mps_,
       association_gate_m_,
       measurement_position_stddev_m_,
-      max_missed_frames_);
+      max_missed_frames_,
+      track_marker_min_speed_mps_);
     RCLCPP_INFO(
       get_logger(),
       "Real Track states will be published on /dynamic_obstacles/tracks with SensorDataQoS.");
@@ -669,6 +673,17 @@ private:
     constexpr double kMinimumArrowSpeedMps = 0.03;
 
     for (const Track & track : tracks_) {
+      const double velocity_x = track.state(Track::kVelocityX);
+      const double velocity_y = track.state(Track::kVelocityY);
+      const double speed_mps = std::hypot(velocity_x, velocity_y);
+      // This is deliberately a visualization filter only.  The complete
+      // tracks_ state and /dynamic_obstacles/tracks message remain unchanged.
+      // It prevents static wall/furniture tracks from burying the moving
+      // obstacles in labels during Step 13 observation.
+      if (speed_mps < track_marker_min_speed_mps_) {
+        continue;
+      }
+
       const bool observed_this_frame = track.missed_frames == 0U;
       const float red = observed_this_frame ? 0.15F : 1.00F;
       const float green = observed_this_frame ? 1.00F : 0.55F;
@@ -703,9 +718,6 @@ private:
       box.points[4] = box.points[0];
       output.markers.push_back(box);
 
-      const double velocity_x = track.state(Track::kVelocityX);
-      const double velocity_y = track.state(Track::kVelocityY);
-      const double speed_mps = std::hypot(velocity_x, velocity_y);
       if (speed_mps >= kMinimumArrowSpeedMps) {
         const double arrow_length = std::min(
           kMaximumArrowLengthM, speed_mps * kVelocityArrowSeconds);
@@ -1261,6 +1273,7 @@ private:
   double process_acceleration_stddev_mps2_{1.00};
   double association_gate_m_{0.40};
   double measurement_position_stddev_m_{0.15};
+  double track_marker_min_speed_mps_{0.10};
   std::size_t max_missed_frames_{5U};
   Track debug_cv_state_{};
   bool has_debug_cv_state_{false};

@@ -38,6 +38,8 @@
 - **黄色箭头**：滤波后的速度方向，长度约表示未来 `0.7 s` 的位移，最长限制为 `1.2 m`，防止偶发坏速度把 RViz 撑满；
 - **文字**：例如 `ID 7 | v=0.28 m/s | miss=0`。
 
+为了不让墙体和家具边缘的静态 Track 把画面淹没，默认只画速度不小于 `0.10 m/s` 的 **运动候选 Track**。这是 RViz 的显示筛选，**不是**动态目标分类：所有 Track 仍完整存在于 `tracks_`，也仍完整发布到 `/dynamic_obstacles/tracks`。
+
 ## 一个容易误解的边界
 
 现在的第 11 步会为**所有满足聚类条件的物体**建立 Track，包括静态墙边、家具边缘和动态方块。
@@ -125,6 +127,15 @@ ros2 run predictive_nav_tracking tracking_node
 
 若你之前已经运行着旧的 `tracking_node`，必须先在它的终端按 `Ctrl+C`，再执行终端 3 的命令；旧进程不包含本步的新 Marker 发布器。
 
+若要回到“完整调试模式”，把可视化阈值设为 0：
+
+```bash
+ros2 run predictive_nav_tracking tracking_node --ros-args \
+  -p track_marker_min_speed_mps:=0.0
+```
+
+这样会再次显示包括静态墙体/家具边缘在内的全部 Track；适合排错，不适合录展示视频。
+
 ## 在 RViz 中确认什么
 
 重新启动 launch 后，左侧应有三个可勾选项：
@@ -177,7 +188,14 @@ ros2 topic info /dynamic_obstacles/track_markers
 
 ### 方框很多、墙边也有 ID
 
-这是当前版本正常边界。tracker 还没有动态性分类，任何连续 cluster 都会形成 Track。不要删代码来“只剩动态方块”；后续应该用速度证据、静态地图或语义信息明确设计分类规则。
+先确认启动时没有传 `track_marker_min_speed_mps:=0.0`。默认的 `0.10` 会隐藏低速 Track；可临时提高到 `0.15` 或 `0.20` 让画面更简洁，例如：
+
+```bash
+ros2 run predictive_nav_tracking tracking_node --ros-args \
+  -p track_marker_min_speed_mps:=0.15
+```
+
+这仍不是动态性分类。tracker 还没有动态/静态标签，任何连续 cluster 都会形成正式 Track；后续应使用速度证据、静态地图或语义信息设计分类规则，而不是为了画面好看删除数据。
 
 ### 看见橙色真值框，却没有青色 cluster
 
