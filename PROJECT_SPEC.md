@@ -135,7 +135,7 @@ map/AMCL/SLAM ──> Nav2 global planner ──> MPPI candidate trajectories �
 
 - `Cluster.msg`：`std_msgs/Header header`、`uint32 point_count`、`geometry_msgs/Point centroid`、`geometry_msgs/Vector3 size`、`geometry_msgs/Point[] points`（可配置是否发布点，默认关闭以减负）。
 - `TrackedObstacle.msg`：`uint32 track_id`、`PoseWithCovariance pose`、`TwistWithCovariance twist`、`Vector3 size`、`uint32 age`、`uint32 missed_frames`、`float32 confidence`；时间与 frame 在外层数组 header 中共享。
-- `PredictedTrajectory.msg`：`Header`、`uint32 track_id`、`builtin_interfaces/Duration[] offsets`、`PoseWithCovariance[] poses`、`Vector3 size`、`float32 confidence`。
+- `PredictedTrajectory.msg`：`uint32 track_id`、`builtin_interfaces/Duration[] time_offsets`、`PoseWithCovariance[] poses`、`Vector3 size`、`float32 confidence`；时间和 frame 在外层数组 header 中共享。
 - `ClusterArray`、`TrackedObstacleArray`、`PredictedTrajectoryArray` 包装数组并带共同 `Header`。
 
 动态数组用 `SensorDataQoS`（best effort、短队列）从感知到预测，MPPI 缓存采用最新有效、时间阈值（`max_prediction_age`）策略。若预测过期，Critic 不得静默沿用；应计数、节流告警，并根据参数选择“跳过动态评分”或“保守停止”。
