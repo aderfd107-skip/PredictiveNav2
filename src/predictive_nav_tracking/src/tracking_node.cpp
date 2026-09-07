@@ -633,6 +633,15 @@ private:
       obstacle.twist.covariance[6] = track.covariance(Track::kVelocityY, Track::kVelocityX);
       obstacle.twist.covariance[7] = track.covariance(Track::kVelocityY, Track::kVelocityY);
 
+      // PoseWithCovariance and TwistWithCovariance cannot represent the
+      // position-velocity cross terms. Preserve the full [px, py, vx, vy]
+      // covariance for the prediction module, in row-major order.
+      for (std::size_t row = 0U; row < 4U; ++row) {
+        for (std::size_t column = 0U; column < 4U; ++column) {
+          obstacle.state_covariance[row * 4U + column] = track.covariance(row, column);
+        }
+      }
+
       obstacle.size.x = track.size_x_m;
       obstacle.size.y = track.size_y_m;
       obstacle.size.z = 0.0;

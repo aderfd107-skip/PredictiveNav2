@@ -134,7 +134,7 @@ map/AMCL/SLAM ──> Nav2 global planner ──> MPPI candidate trajectories �
 建议的 `predictive_nav_msgs`：
 
 - `Cluster.msg`：`std_msgs/Header header`、`uint32 point_count`、`geometry_msgs/Point centroid`、`geometry_msgs/Vector3 size`、`geometry_msgs/Point[] points`（可配置是否发布点，默认关闭以减负）。
-- `TrackedObstacle.msg`：`uint32 track_id`、`PoseWithCovariance pose`、`TwistWithCovariance twist`、`Vector3 size`、`uint32 age`、`uint32 missed_frames`、`float32 confidence`；时间与 frame 在外层数组 header 中共享。
+- `TrackedObstacle.msg`：`uint32 track_id`、`PoseWithCovariance pose`、`TwistWithCovariance twist`、完整 `[px,py,vx,vy]` 的 `float64[16] state_covariance`、`Vector3 size`、`uint32 age`、`uint32 missed_frames`、`float32 confidence`；时间与 frame 在外层数组 header 中共享。
 - `PredictedTrajectory.msg`：`uint32 track_id`、`builtin_interfaces/Duration[] time_offsets`、`PoseWithCovariance[] poses`、`Vector3 size`、`float32 confidence`；时间和 frame 在外层数组 header 中共享。
 - `ClusterArray`、`TrackedObstacleArray`、`PredictedTrajectoryArray` 包装数组并带共同 `Header`。
 

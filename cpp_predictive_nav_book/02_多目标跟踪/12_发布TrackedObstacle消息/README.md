@@ -48,6 +48,7 @@ TrackedObstacle
 ├── twist
 │   ├── twist.linear.x / y
 │   └── covariance[36]
+├── state_covariance[16]
 ├── size.x / y
 ├── age
 ├── missed_frames
@@ -61,6 +62,7 @@ TrackedObstacle
 | `twist.linear.x/y` | `state[vx/vy]` | 当前滤波后的二维速度，单位 m/s。 |
 | `pose.covariance` | `P` 的位置 2×2 部分 | 位置估计的不确定性。 |
 | `twist.covariance` | `P` 的速度 2×2 部分 | 速度估计的不确定性。 |
+| `state_covariance` | 完整内部 `P`，状态顺序 `[px, py, vx, vy]` | 4×4 行优先协方差；保留位置—速度交叉项，供第 03 模块严格传播。 |
 | `size.x/y` | `size_x_m / size_y_m` | 本次匹配 cluster 的轴对齐尺寸。 |
 | `age` | `age` | 该 Track 已经历的有效处理帧数。 |
 | `missed_frames` | `missed_frames` | 已连续多少帧没有可信匹配。 |
@@ -100,6 +102,24 @@ TrackedObstacle
 `Pxy/Pyx` 是 Kalman Filter 真正估计出的 x/y 相关性，因此从内部 `Track::covariance` 复制。其余非对角线填 0，意思是“当前没有建模它们之间的相关性”；不能因为 z 或 yaw 不可观测，就填一个巨大的交叉协方差。那会错误地声称它们与 x/y 存在极强相关性，也可能破坏协方差矩阵应有的半正定性质。
 
 这样第 03 模块读取消息时，可以明确只使用 x/y 和 vx/vy，而不会误以为 tracker 已经知道障碍物的三维朝向。
+
+## 为什么还要增加 `state_covariance[16]`
+
+`pose.covariance` 与 `twist.covariance` 各自只能保存“位置内部”和“速度内部”的相关性，无法表达 `Cov(px, vx)`、`Cov(py, vy)` 这种位置—速度交叉项。
+
+但 CV 预测协方差需要完整公式 `P_future = F P F^T + Q`。若丢失交叉项，只能做近似，未来不确定性可能偏大或偏小。因此第 03 模块第 07 步增加：
+
+```text
+state_covariance[16]
+```
+
+它是内部 4×4 状态协方差的行优先平铺形式，状态顺序固定为：
+
+```text
+[px, py, vx, vy]
+```
+
+这个字段不是新的滤波算法；只是完整、无损地把 tracking 已有的估计交给 prediction。第 03 模块会用它计算未来位置协方差。
 
 ## 发布规则
 
