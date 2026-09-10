@@ -39,6 +39,78 @@
 
 ---
 
+### 2026-09-10：残留 Gazebo 实例生成多台机器人，速度命令非零但底盘几乎不动
+
+#### 问题现象
+
+- 重启仿真后，RViz 最初短暂显示 `Fixed Frame [map] does not exist`；等待后 `map → odom → base_footprint` 恢复，说明这不是持续的 TF 链配置错误。
+- 在 RViz 发送 Nav2 Goal 后，`/navigate_to_pose/_action/status` 为 `2`（`EXECUTING`），`/cmd_vel` 和 `/cmd_vel_safe` 均持续出现约 `linear.x = 0.35 m/s` 的非零命令，但 Gazebo 中小车看起来不移动。
+- `/clock` 的 `sec=16` 保持一段时间、`nanosec` 连续增加；这是仿真时间在同一整秒内正常推进，不是 Gazebo 暂停。
+- `/odom` 的实际 `twist.twist.linear.x` 只有约 `0.0008 m/s`，与命令速度严重不一致；动态 actor 也表现异常。
+
+#### 排查证据
+
+```bash
+ros2 topic echo /clock
+ros2 topic echo /cmd_vel
+ros2 topic echo /cmd_vel_safe
+ros2 topic echo /odom --field twist.twist
+ros2 topic info /cmd_vel_safe --verbose
+
+gz topic -l | grep -E 'cmd_vel|odom'
+gz topic -i -t /nav_robot/cmd_vel_safe
+gz topic -e -t /nav_robot/cmd_vel_safe
+```
+
+- `/cmd_vel_safe` 在 ROS 图中由 `scan_safety_guard` 发布、由 `dynamic_navigation_bridge` 订阅；Gazebo transport 中也确实收到了 `linear.x ≈ 0.35` 的 `gz.msgs.Twist`，因此不是 Nav2 未规划、激光安全层清零或 ROS→Gazebo topic 名不一致。
+- `gz topic -l` 却同时出现了：
+
+```text
+/model/nav_robot/odometry_with_covariance
+/model/nav_robot_0/odometry_with_covariance
+/model/nav_robot_1/odometry_with_covariance
+```
+
+- 在启动 `gz topic -e` 观察命令之前，`gz topic -i -t /nav_robot/cmd_vel_safe` 已显示 3 个订阅者；正常单机器人场景应只有一个 DiffDrive 订阅者。
+
+#### 根因
+
+之前运行的 Gazebo server 没有完整退出，之后重复启动 launch 又向同一 world 反复 spawn 机器人，留下 `nav_robot`、`nav_robot_0`、`nav_robot_1` 多个实例。它们在同一出生区域相互干扰/碰撞，并共同接收速度命令，导致 Nav2 命令链在 ROS 与 Gazebo transport 层都正确、实际底盘运动却接近 0。
+
+#### 解决方法
+
+1. 先在所有运行中的 ROS/Gazebo 终端按 `Ctrl+C`。
+2. 若仍有残留，执行：
+
+```bash
+pkill -f 'gz sim'
+pkill -f 'ros_gz_bridge'
+pkill -f 'dynamic_obstacle_controller.py'
+pkill -f 'scan_safety_guard.py'
+```
+
+3. 用下面命令确认无残留，再只启动一次 bringup：
+
+```bash
+pgrep -af 'gz sim|ros_gz_bridge|dynamic_obstacle_controller|scan_safety_guard'
+gz topic -l | grep nav_robot
+```
+
+4. 重新启动后，Gazebo topic 列表只能出现 `nav_robot`，不能出现 `nav_robot_0`、`nav_robot_1`。
+
+#### 验证结论
+
+用户完成清理并只启动一套仿真后，导航恢复正常。预测节点只订阅 `/dynamic_obstacles/tracks`、发布 `/dynamic_obstacles/predictions`，不发布 `/cmd_vel`，与本次底盘异常无因果关系。
+
+#### 经验总结
+
+1. `Publisher/Subscriber count` 正常只能证明 ROS DDS 或 bridge 端点连接，不足以证明 Gazebo 物理执行正确。
+2. 对“有速度命令但小车不动”，按 `action status → /cmd_vel → /cmd_vel_safe → Gazebo transport → /odom.twist → Gazebo model count` 逐层排查。
+3. `sec` 不变、`nanosec` 递增说明 `/clock` 正在推进；不要误判为仿真暂停。
+4. 每次实验结束要先关闭顶层 launch，并在重启前确认不存在残留 Gazebo world/robot；这是可复现实验的基础条件。
+
+---
+
 ### 2026-06-09：Gazebo 中小车撞墙停止，但 RViz 中小车继续前进
 
 #### 问题现象

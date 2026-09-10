@@ -12,6 +12,7 @@
   <!-- Step 04 reads TrackedObstacleArray from the tracking module. -->
   <depend>predictive_nav_msgs</depend>
   <depend>rclcpp</depend>
+  <depend>visualization_msgs</depend>
 
   <export>
     <build_type>ament_cmake</build_type>

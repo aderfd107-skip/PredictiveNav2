@@ -5,6 +5,7 @@ project(predictive_nav_prediction)
 find_package(ament_cmake REQUIRED)
 find_package(predictive_nav_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(visualization_msgs REQUIRED)
 
 # Step 04 reads the tracking module's public message.  Prediction algorithms
 # and publishers will be added in later steps.
@@ -13,6 +14,7 @@ target_compile_features(prediction_node PUBLIC cxx_std_17)
 ament_target_dependencies(prediction_node
   predictive_nav_msgs
   rclcpp
+  visualization_msgs
 )
 
 install(TARGETS

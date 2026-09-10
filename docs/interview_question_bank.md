@@ -236,6 +236,14 @@
 
 **排查顺序：** 先用 `ros2 topic info /dynamic_obstacles/cluster_markers` 看 Publisher count；有 Publisher 时检查 RViz Topic/Enabled/namespace，无 Publisher 才检查 `scan_info_node` 是否启动。这样避免把“可视化配置错误”误判成“感知算法故障”。
 
+### Q20-E：如果 Nav2 持续发布非零 `/cmd_vel`，安全输出也非零，但 Gazebo 小车不动，如何定位？
+
+**回答核心：** 不能只看 ROS topic 是否有 Publisher/Subscriber。先确认 action 是 `EXECUTING`，再顺序检查 `/cmd_vel`、`/cmd_vel_safe`、Gazebo transport 上对应 Twist、`/odom.twist` 的实际速度，最后检查 Gazebo world 内是否意外存在多个同名机器人实例。ROS 命令链正常不代表 Gazebo 物理层一定正常。
+
+**项目证据：** 2026-09-10 中，`/cmd_vel` 与 `/cmd_vel_safe` 均约为 `0.35 m/s`，Gazebo transport 也收到同样 Twist，但 `/odom.twist.linear.x` 只有约 `0.0008 m/s`。`gz topic -l` 发现 `nav_robot`、`nav_robot_0`、`nav_robot_1` 三个残留实例；清理残留 Gazebo/bridge 进程并只启动一次场景后恢复正常。
+
+**关键辨析：** `/clock` 的 `sec` 在一秒内不变、但 `nanosec` 持续增加，表示仿真时间正常推进，不是暂停。此时应继续检查物理执行层和 world 实体数量，而不是误改 TF、预测算法或安全层。
+
 ### Q21：怎样证明 DynamicRiskCritic 有效？
 
 **回答核心：** 用相同地图、起终点、actor 路线、速度和重复次数，对比原版 MPPI 与动态风险方案；记录到达率、碰撞/近碰、最小距离、耗时、路径长度、急停或不必要等待。不能只展示一段成功视频。

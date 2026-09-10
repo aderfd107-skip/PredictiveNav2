@@ -12,6 +12,8 @@
 #include "predictive_nav_msgs/msg/predicted_trajectory.hpp"
 #include "predictive_nav_msgs/msg/predicted_trajectory_array.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "visualization_msgs/msg/marker.hpp"
+#include "visualization_msgs/msg/marker_array.hpp"
 
 namespace
 {
@@ -285,12 +287,23 @@ public:
       static_cast<std::size_t>(configured_max_track_missed_frames) : 0U;
     min_track_confidence_ = declare_parameter<double>("min_track_confidence", 0.5);
     max_track_speed_mps_ = declare_parameter<double>("max_track_speed_mps", 3.0);
+    max_visual_uncertainty_diameter_m_ = declare_parameter<double>(
+      "max_visual_uncertainty_diameter_m", 1.2);
+    visualization_min_speed_mps_ = declare_parameter<double>(
+      "visualization_min_speed_mps", 0.15);
+    const int configured_visualization_max_trajectories = declare_parameter<int>(
+      "visualization_max_trajectories", 3);
+    visualization_max_trajectories_ = configured_visualization_max_trajectories > 0 ?
+      static_cast<std::size_t>(configured_visualization_max_trajectories) : 0U;
 
     if (!std::isfinite(max_track_message_age_s_) || max_track_message_age_s_ <= 0.0 ||
       !std::isfinite(max_future_time_skew_s_) || max_future_time_skew_s_ < 0.0 ||
       !std::isfinite(min_track_confidence_) || min_track_confidence_ < 0.0 ||
       min_track_confidence_ > 1.0 || !std::isfinite(max_track_speed_mps_) ||
-      max_track_speed_mps_ <= 0.0)
+      max_track_speed_mps_ <= 0.0 ||
+      !std::isfinite(max_visual_uncertainty_diameter_m_) ||
+      max_visual_uncertainty_diameter_m_ <= 0.0 ||
+      !std::isfinite(visualization_min_speed_mps_) || visualization_min_speed_mps_ < 0.0)
     {
       throw std::invalid_argument("Step 08 track-quality parameters have invalid values");
     }
@@ -307,6 +320,8 @@ public:
     predictions_publisher_ = create_publisher<
       predictive_nav_msgs::msg::PredictedTrajectoryArray>(
       "/dynamic_obstacles/predictions", rclcpp::QoS(10));
+    prediction_markers_publisher_ = create_publisher<visualization_msgs::msg::MarkerArray>(
+      "/dynamic_obstacles/prediction_markers", rclcpp::QoS(10));
 
     input_watchdog_timer_ = create_wall_timer(
       std::chrono::milliseconds(250), [this]() {check_track_input_freshness();});
@@ -328,8 +343,14 @@ public:
       min_track_confidence_, max_track_speed_mps_);
     RCLCPP_INFO(
       get_logger(),
-      "prediction_node started. Step 09 publishes accepted trajectories on "
-      "/dynamic_obstacles/predictions and never controls Nav2.");
+      "RViz presentation filter | min_speed=%.2f m/s | max_trajectories=%zu | "
+      "max_uncertainty_diameter=%.2f m (display only)",
+      visualization_min_speed_mps_, visualization_max_trajectories_,
+      max_visual_uncertainty_diameter_m_);
+    RCLCPP_INFO(
+      get_logger(),
+      "prediction_node started. It publishes trajectories on /dynamic_obstacles/predictions "
+      "and RViz-only markers on /dynamic_obstacles/prediction_markers; it never controls Nav2.");
   }
 
 private:
@@ -418,6 +439,154 @@ private:
         "holding prediction preview until a fresh frame arrives",
         last_accepted_track_stamp_.seconds(), age_s);
     }
+  }
+
+  // RViz understands MarkerArray directly, while downstream algorithms should
+  // read PredictedTrajectoryArray.  Keeping the two outputs separate prevents
+  // a visualization choice from becoming part of the prediction interface.
+  void publish_prediction_markers(
+    const predictive_nav_msgs::msg::PredictedTrajectoryArray & prediction_output,
+    const std::vector<const predictive_nav_msgs::msg::TrackedObstacle *> & accepted_tracks)
+  {
+    visualization_msgs::msg::MarkerArray marker_array;
+    constexpr double kLineWidthM = 0.04;
+    constexpr double kPointDiameterM = 0.10;
+    constexpr double kUncertaintyLineWidthM = 0.025;
+    constexpr std::size_t kEllipseSegmentCount = 32U;
+    constexpr double kPi = 3.14159265358979323846;
+    // A short lifetime automatically removes stale visualizations if tracking
+    // input stops. The value is longer than the usual 10 Hz input period.
+    const auto marker_lifetime = static_cast<builtin_interfaces::msg::Duration>(
+      rclcpp::Duration::from_seconds(0.35));
+
+    struct VisualizationCandidate
+    {
+      const predictive_nav_msgs::msg::PredictedTrajectory * trajectory{nullptr};
+      double speed_mps{0.0};
+      double score{0.0};
+    };
+    std::vector<VisualizationCandidate> candidates;
+    candidates.reserve(prediction_output.trajectories.size());
+    for (const auto & trajectory : prediction_output.trajectories) {
+      const auto matching_track = std::find_if(
+        accepted_tracks.begin(), accepted_tracks.end(),
+        [&trajectory](const auto * track) {return track->track_id == trajectory.track_id;});
+      if (trajectory.poses.empty() || matching_track == accepted_tracks.end()) {
+        continue;
+      }
+
+      const auto & velocity = (*matching_track)->twist.twist.linear;
+      const double speed_mps = std::hypot(velocity.x, velocity.y);
+      if (speed_mps < visualization_min_speed_mps_) {
+        continue;
+      }
+      candidates.push_back(VisualizationCandidate{
+        &trajectory, speed_mps, speed_mps * (*matching_track)->confidence});
+    }
+    std::sort(
+      candidates.begin(), candidates.end(),
+      [](const VisualizationCandidate & left, const VisualizationCandidate & right) {
+        return left.score > right.score;
+      });
+    if (candidates.size() > visualization_max_trajectories_) {
+      candidates.resize(visualization_max_trajectories_);
+    }
+
+    for (const auto & candidate : candidates) {
+      const auto & trajectory = *candidate.trajectory;
+
+      const int marker_id = static_cast<int>(trajectory.track_id);
+      auto & line = marker_array.markers.emplace_back();
+      line.header = prediction_output.header;
+      line.ns = "prediction_trajectory";
+      line.id = marker_id;
+      line.type = visualization_msgs::msg::Marker::LINE_STRIP;
+      line.action = visualization_msgs::msg::Marker::ADD;
+      line.pose.orientation.w = 1.0;
+      line.scale.x = kLineWidthM;
+      line.color.g = 0.90F;
+      line.color.b = 1.00F;
+      line.color.a = 0.95F;
+      line.lifetime = marker_lifetime;
+      line.points.reserve(trajectory.poses.size());
+
+      auto & points = marker_array.markers.emplace_back();
+      points.header = prediction_output.header;
+      points.ns = "prediction_points";
+      points.id = marker_id;
+      points.type = visualization_msgs::msg::Marker::SPHERE_LIST;
+      points.action = visualization_msgs::msg::Marker::ADD;
+      points.pose.orientation.w = 1.0;
+      points.scale.x = kPointDiameterM;
+      points.scale.y = kPointDiameterM;
+      points.scale.z = kPointDiameterM;
+      points.color.g = 0.90F;
+      points.color.b = 1.00F;
+      points.color.a = 0.95F;
+      points.lifetime = marker_lifetime;
+      points.points.reserve(trajectory.poses.size());
+
+      for (const auto & predicted_pose : trajectory.poses) {
+        auto & line_point = line.points.emplace_back();
+        line_point.x = predicted_pose.pose.position.x;
+        line_point.y = predicted_pose.pose.position.y;
+        line_point.z = 0.06;
+        auto & sphere_point = points.points.emplace_back();
+        sphere_point.x = predicted_pose.pose.position.x;
+        sphere_point.y = predicted_pose.pose.position.y;
+        sphere_point.z = 0.08;
+      }
+
+      // Draw a true 2D covariance ellipse outline, not a translucent disk.
+      // The outline is much easier to read in a project demonstration, and
+      // Pxy determines its rotation instead of being silently ignored.
+      const auto & final_pose = trajectory.poses.back();
+      const double pxx_m2 = std::max(0.0, final_pose.covariance[0]);
+      const double pxy_m2 = final_pose.covariance[1];
+      const double pyy_m2 = std::max(0.0, final_pose.covariance[7]);
+      const double trace_m2 = pxx_m2 + pyy_m2;
+      const double discriminant_m2 = std::sqrt(std::max(
+          0.0, (pxx_m2 - pyy_m2) * (pxx_m2 - pyy_m2) + 4.0 * pxy_m2 * pxy_m2));
+      const double major_variance_m2 = std::max(0.0, 0.5 * (trace_m2 + discriminant_m2));
+      const double minor_variance_m2 = std::max(0.0, 0.5 * (trace_m2 - discriminant_m2));
+      const double major_axis_m = std::min(
+        max_visual_uncertainty_diameter_m_ / 2.0, 2.0 * std::sqrt(major_variance_m2));
+      const double minor_axis_m = std::min(
+        max_visual_uncertainty_diameter_m_ / 2.0, 2.0 * std::sqrt(minor_variance_m2));
+      const double ellipse_yaw_rad = 0.5 * std::atan2(2.0 * pxy_m2, pxx_m2 - pyy_m2);
+      auto & uncertainty = marker_array.markers.emplace_back();
+      uncertainty.header = prediction_output.header;
+      uncertainty.ns = "prediction_horizon_uncertainty";
+      uncertainty.id = marker_id;
+      uncertainty.type = visualization_msgs::msg::Marker::LINE_STRIP;
+      uncertainty.action = visualization_msgs::msg::Marker::ADD;
+      uncertainty.pose.orientation.w = 1.0;
+      uncertainty.scale.x = kUncertaintyLineWidthM;
+      uncertainty.color.r = 0.75F;
+      uncertainty.color.g = 0.35F;
+      uncertainty.color.b = 1.00F;
+      uncertainty.color.a = 0.90F;
+      uncertainty.lifetime = marker_lifetime;
+      uncertainty.points.reserve(kEllipseSegmentCount + 1U);
+      for (std::size_t index = 0U; index <= kEllipseSegmentCount; ++index) {
+        const double angle_rad =
+          2.0 * kPi * static_cast<double>(index) / static_cast<double>(kEllipseSegmentCount);
+        const double local_x_m = major_axis_m * std::cos(angle_rad);
+        const double local_y_m = minor_axis_m * std::sin(angle_rad);
+        auto & ellipse_point = uncertainty.points.emplace_back();
+        ellipse_point.x = final_pose.pose.position.x +
+          std::cos(ellipse_yaw_rad) * local_x_m - std::sin(ellipse_yaw_rad) * local_y_m;
+        ellipse_point.y = final_pose.pose.position.y +
+          std::sin(ellipse_yaw_rad) * local_x_m + std::cos(ellipse_yaw_rad) * local_y_m;
+        ellipse_point.z = 0.10;
+      }
+    }
+
+    prediction_markers_publisher_->publish(marker_array);
+    RCLCPP_INFO_THROTTLE(
+      get_logger(), *get_clock(), 1000,
+      "published RViz presentation markers | displayed=%zu | trajectory_candidates=%zu",
+      candidates.size(), prediction_output.trajectories.size());
   }
 
   void tracks_callback(
@@ -528,6 +697,7 @@ private:
       }
     }
     predictions_publisher_->publish(prediction_output);
+    publish_prediction_markers(prediction_output, accepted_tracks);
     RCLCPP_INFO_THROTTLE(
       get_logger(), *get_clock(), 1000,
       "published predictions | topic=/dynamic_obstacles/predictions | stamp=%.3f s | "
@@ -584,6 +754,8 @@ private:
     tracks_subscription_;
   rclcpp::Publisher<predictive_nav_msgs::msg::PredictedTrajectoryArray>::SharedPtr
     predictions_publisher_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr
+    prediction_markers_publisher_;
   rclcpp::TimerBase::SharedPtr input_watchdog_timer_;
   double prediction_horizon_s_{0.0};
   double prediction_dt_s_{0.0};
@@ -594,6 +766,9 @@ private:
   std::size_t max_track_missed_frames_{0U};
   double min_track_confidence_{0.0};
   double max_track_speed_mps_{0.0};
+  double max_visual_uncertainty_diameter_m_{0.0};
+  double visualization_min_speed_mps_{0.0};
+  std::size_t visualization_max_trajectories_{0U};
   bool has_accepted_track_frame_{false};
   rclcpp::Time last_accepted_track_stamp_{0, 0, RCL_ROS_TIME};
   std::vector<double> prediction_time_offsets_s_;

@@ -94,6 +94,7 @@ src/
   predictive_nav_tracking/          # C++：关联、CV Kalman filter、track 生命周期
   predictive_nav_prediction/        # C++：短期轨迹和协方差传播
   predictive_nav_mppi/              # C++：DynamicRiskCritic plugin 与风险工具
+  predictive_nav_local_planner/     # C++：进阶自定义预测感知 nav2_core::Controller
   predictive_nav_benchmark/         # Python：重复实验、rosbag、指标导出、绘图
 ```
 
@@ -128,6 +129,7 @@ map/AMCL/SLAM ──> Nav2 global planner ──> MPPI candidate trajectories �
 | Tracking | `clusters` | `/dynamic_obstacles/tracks` | gating + 最近邻、KF predict/update、ID、miss 生命周期。 |
 | Prediction | `tracks` | `/dynamic_obstacles/predictions` | 将各 active track 的位置及 2×2 位置协方差离散预测至 horizon。 |
 | MPPI Critic | `predictions`（生命周期节点内可靠最新缓存） | 无独立控制 topic | 评分每条 MPPI 候选，向 `CriticData.costs` 累加动态风险/TTC。 |
+| Advanced local controller（后续） | global path、costmap、odom、predictions | 通过 Nav2 Controller Server 输出速度 | 自己采样、前向模拟、评分并选择预测感知局部轨迹；在完成 benchmark/真机主线后再实现。 |
 | Nav2 | map/TF/odom/scan/costmap | `/cmd_vel` | 全局路径、原版静态避障、MPPI 控制。 |
 | Benchmark | `/odom`、tracks、predictions、`/cmd_vel`、Nav2 action/diagnostics、事件 | CSV/JSON、rosbag | 采样指标、场景元数据和实验结果。 |
 
@@ -206,7 +208,9 @@ x=x^-+K(z-Hx^-),\quad P=(I-KH)P^-(I-KH)^T+KRK^T
 
 ### 6.1 选择与依赖
 
-保留 Nav2 的 global planner、costmap、BT、AMCL/SLAM 等成熟模块。baseline 先分别稳定运行 DWB 和原版 MPPI。当前 Jazzy 的公开头文件表明 `mppi::critics::CriticFunction` 为可行扩展点，因此实现 `predictive_nav_mppi::DynamicRiskCritic`，由 pluginlib 加载到 MPPI `critics` 列表中；仅当该接口在实际构建/运行中不能满足带时序预测的输入时，才评估独立 `nav2_core::Controller`，并在本节记录理由。
+保留 Nav2 的 global planner、costmap、BT、AMCL/SLAM 等成熟模块。baseline 先分别稳定运行 DWB 和原版 MPPI。当前 Jazzy 的公开头文件表明 `mppi::critics::CriticFunction` 为可行扩展点，因此主线先实现 `predictive_nav_mppi::DynamicRiskCritic`，由 pluginlib 加载到 MPPI `critics` 列表中。
+
+在该主线完成、第 05 模块建立 baseline/benchmark、并完成第一轮真机验证后，规划一个进阶扩展 `predictive_nav_local_planner`：实现自己的 `nav2_core::Controller` 插件，替换 MPPI 的候选生成、差速前向模拟与总代价选择，但继续复用 Nav2 的全局路径、costmap、lifecycle、目标管理与 recovery。它不是 Critic 失败时的补丁，也不是当前交付的前置条件；它将与原版 MPPI、MPPI + DynamicRiskCritic 使用相同场景进行第三组对照。
 
 Critic 在 lifecycle `initialize()` 获取参数、节点 logger 和动态预测订阅；`score(CriticData&)` 对 `data.trajectories` 的每一采样轨迹、每一时间点计算成本并累加到 `data.costs`。它不得发布 `/cmd_vel`、阻塞等待消息、执行 TF 查询或在控制周期中分配大量内存。预测缓存以 mutex/原子快照实现，生命周期 deactivate/cleanup 时安全清空。
 
