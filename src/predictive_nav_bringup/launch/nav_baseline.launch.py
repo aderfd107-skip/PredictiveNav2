@@ -15,6 +15,7 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -42,11 +43,24 @@ def generate_launch_description():
             ),
             launch_arguments={
                 "world": LaunchConfiguration("world"),
+                # The Gazebo service / joint-state topic namespace contains
+                # the world name. Keep it explicit when selecting a new map
+                # and its matching static SDF.
+                "world_name": LaunchConfiguration("world_name"),
                 "use_rviz": "false",
+                # Gazebo spawn and AMCL's initial pose must describe the same
+                # physical pose. Defaults happened to match in the legacy
+                # world; forwarding them is essential for alternate maps.
+                "spawn_x": LaunchConfiguration("spawn_x"),
+                "spawn_y": LaunchConfiguration("spawn_y"),
+                "spawn_yaw": LaunchConfiguration("spawn_yaw"),
                 # AMCL is the only publisher of map -> odom during known-map
                 # navigation.  Do not also give odom a world parent.
                 "use_world_odom_anchor": "false",
-                "enable_scan_safety_guard": "true",
+                "enable_scan_safety_guard": LaunchConfiguration(
+                    "enable_scan_safety_guard"
+                ),
+                "cmd_vel_topic": LaunchConfiguration("cmd_vel_topic"),
                 "enable_dynamic_obstacle": LaunchConfiguration("enable_dynamic_obstacle"),
             }.items(),
         )],
@@ -56,6 +70,26 @@ def generate_launch_description():
         LaunchConfiguration("params_file"),
         {"use_sim_time": LaunchConfiguration("use_sim_time")},
     ]
+    # These are launch-level overrides rather than a copied YAML file: the
+    # canonical DWB baseline stays in nav2_dwb.yaml, while a scenario launch
+    # can tune only the small set of controller parameters it is testing.
+    controller_parameters = common_parameters + [{
+        "FollowPath.PathAlign.scale": ParameterValue(
+            LaunchConfiguration("dwb_path_align_scale"), value_type=float
+        ),
+        "FollowPath.GoalAlign.scale": ParameterValue(
+            LaunchConfiguration("dwb_goal_align_scale"), value_type=float
+        ),
+        "FollowPath.PathDist.scale": ParameterValue(
+            LaunchConfiguration("dwb_path_dist_scale"), value_type=float
+        ),
+        "FollowPath.GoalDist.scale": ParameterValue(
+            LaunchConfiguration("dwb_goal_dist_scale"), value_type=float
+        ),
+        "FollowPath.sim_time": ParameterValue(
+            LaunchConfiguration("dwb_sim_time"), value_type=float
+        ),
+    }]
     # Do not depend on nav2_bringup here.  Jazzy Debian's navigation2 meta
     # package provides the runtime nodes but not necessarily nav2_bringup.
     # Starting the lifecycle nodes explicitly also makes this baseline's
@@ -81,7 +115,7 @@ def generate_launch_description():
             executable="controller_server",
             name="controller_server",
             output="screen",
-            parameters=common_parameters,
+            parameters=controller_parameters,
         ),
         Node(
             package="nav2_planner",
@@ -201,10 +235,35 @@ def generate_launch_description():
         [
             DeclareLaunchArgument("map", default_value=default_map),
             DeclareLaunchArgument("world", default_value=default_world),
+            DeclareLaunchArgument(
+                "world_name", default_value="dynamic_navigation_lab",
+                description="Gazebo world name declared by the selected SDF.",
+            ),
             DeclareLaunchArgument("params_file", default_value=default_params),
             DeclareLaunchArgument("rviz_config", default_value=default_rviz),
             DeclareLaunchArgument("use_sim_time", default_value="true"),
             DeclareLaunchArgument("use_rviz", default_value="true"),
+            # Defaults exactly match config/nav2_dwb.yaml. Scenario wrappers
+            # may override them without duplicating the full Nav2 YAML.
+            DeclareLaunchArgument("dwb_path_align_scale", default_value="20.0"),
+            DeclareLaunchArgument("dwb_goal_align_scale", default_value="14.0"),
+            DeclareLaunchArgument("dwb_path_dist_scale", default_value="32.0"),
+            DeclareLaunchArgument("dwb_goal_dist_scale", default_value="24.0"),
+            DeclareLaunchArgument("dwb_sim_time", default_value="1.3"),
+            DeclareLaunchArgument(
+                "enable_scan_safety_guard", default_value="true",
+                description=(
+                    "Apply the manual LiDAR speed guard before Gazebo. "
+                    "Disable for direct Nav2 controller benchmarks."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "cmd_vel_topic", default_value="/cmd_vel_safe",
+                description=(
+                    "ROS topic bridged to Gazebo DiffDrive. Must be /cmd_vel "
+                    "when the scan safety guard is disabled."
+                ),
+            ),
             DeclareLaunchArgument(
                 "enable_dynamic_obstacle",
                 default_value="false",

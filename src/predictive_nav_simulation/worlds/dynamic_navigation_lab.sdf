@@ -130,8 +130,9 @@
       </link>
     </model>
 
-    <!-- Lower laboratory partitions; entrance gaps are widened for the
-         0.46 m robot footprint and dynamic-navigation test maneuvers. -->
+    <!-- Lower laboratory partitions.  Passage suitability is governed by
+         Nav2's calibrated circular robot_radius, not the former rectangular
+         0.46 m-wide teaching model. -->
     <model name="lower_corridor_wall_left_west">
       <static>true</static>
       <pose>-6.3 -1.0 0.6 0 0 0</pose>

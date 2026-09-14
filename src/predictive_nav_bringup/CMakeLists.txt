@@ -9,7 +9,10 @@ install(
 )
 
 install(
-  PROGRAMS scripts/publish_initial_pose.py
+  PROGRAMS
+    scripts/publish_initial_pose.py
+    scripts/dwb_evaluation_monitor.py
+    scripts/narrow_passage_mission.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

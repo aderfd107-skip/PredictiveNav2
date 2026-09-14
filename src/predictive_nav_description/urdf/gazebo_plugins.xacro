@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
-  <xacro:macro name="predictive_nav_gazebo_plugins" params="topic_prefix:=nav_robot odom_frame:=odom base_frame:=base_footprint">
+  <xacro:macro name="predictive_nav_gazebo_plugins" params="topic_prefix:=nav_robot odom_frame:=odom base_frame:=base_footprint wheel_separation:=0.220 wheel_radius:=0.0325">
     <gazebo reference="base_link">
       <material>Gazebo/Blue</material>
     </gazebo>
@@ -30,8 +30,9 @@
       <plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
         <left_joint>left_wheel_joint</left_joint>
         <right_joint>right_wheel_joint</right_joint>
-        <wheel_separation>0.51</wheel_separation>
-        <wheel_radius>0.08</wheel_radius>
+        <!-- Passed from robot.urdf.xacro: one source for link geometry and DiffDrive kinematics. -->
+        <wheel_separation>${wheel_separation}</wheel_separation>
+        <wheel_radius>${wheel_radius}</wheel_radius>
         <max_linear_velocity>0.45</max_linear_velocity>
         <min_linear_velocity>-0.35</min_linear_velocity>
         <max_angular_velocity>0.75</max_angular_velocity>

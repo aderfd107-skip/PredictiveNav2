@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
-  <xacro:macro name="predictive_nav_lidar" params="x:=0.22 y:=0 z:=0.045">
+  <xacro:macro name="predictive_nav_lidar" params="x:=0.0 y:=0.0 z:=0.060 roll:=0.0 pitch:=0.0 yaw:=0.0">
     <link name="lidar_link">
       <visual>
         <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -19,13 +19,14 @@
     </link>
 
     <joint name="lidar_joint" type="fixed">
-      <parent link="top_deck_link"/>
+      <!-- Pose is explicitly relative to base_link for later survey/calibration. -->
+      <parent link="base_link"/>
       <child link="lidar_link"/>
-      <origin xyz="${x} ${y} ${z}" rpy="0 0 0"/>
+      <origin xyz="${x} ${y} ${z}" rpy="${roll} ${pitch} ${yaw}"/>
     </joint>
   </xacro:macro>
 
-  <xacro:macro name="predictive_nav_imu">
+  <xacro:macro name="predictive_nav_imu" params="x:=0.0 y:=0.0 z:=0.045 roll:=0.0 pitch:=0.0 yaw:=0.0">
     <link name="imu_link">
       <visual>
         <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -34,19 +35,14 @@
         </geometry>
         <material name="predictive_nav_black"/>
       </visual>
-      <collision>
-        <origin xyz="0 0 0" rpy="0 0 0"/>
-        <geometry>
-          <box size="0.05 0.04 0.02"/>
-        </geometry>
-      </collision>
+      <!-- Placeholder only: no IMU model/driver is implied and it has no collision. -->
       <xacro:predictive_nav_box_inertia mass="0.08" x="0.05" y="0.04" z="0.02"/>
     </link>
 
     <joint name="imu_joint" type="fixed">
       <parent link="base_link"/>
       <child link="imu_link"/>
-      <origin xyz="0 0 0.125" rpy="0 0 0"/>
+      <origin xyz="${x} ${y} ${z}" rpy="${roll} ${pitch} ${yaw}"/>
     </joint>
   </xacro:macro>
 

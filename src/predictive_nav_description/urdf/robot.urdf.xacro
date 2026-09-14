@@ -3,9 +3,47 @@
   <xacro:arg name="robot_name" default="predictive_nav_robot"/>
   <xacro:arg name="robot_color" default="predictive_nav_blue"/>
   <xacro:arg name="use_gazebo_plugins" default="false"/>
-  <xacro:arg name="lidar_x" default="0.22"/>
-  <xacro:arg name="lidar_y" default="0"/>
-  <xacro:arg name="lidar_z" default="0.045"/>
+
+  <!--
+    Real-robot geometry register
+    ============================
+    Hardware-specification values:
+      base_radius=0.110 m       (220 mm circular aluminium chassis)
+      wheel_radius=0.0325 m     (65 mm nominal drive-wheel diameter)
+
+    Values marked PROVISIONAL_DESIGN_VALUE make the simulation runnable;
+    they are not measurements of the unfinished robot.  Replace every
+    REAL_ROBOT_CALIBRATION item after the mechanical assembly is complete.
+    Keep Nav2's robot_radius and a future DynamicRiskCritic robot_radius_m
+    equal to the final *maximum mechanical radius plus their chosen safety
+    margin*.  See predictive_nav_bringup/config/nav2_dwb.yaml.
+  -->
+  <xacro:arg name="base_radius" default="0.110"/>
+  <xacro:arg name="base_height" default="0.060"/> <!-- PROVISIONAL_DESIGN_VALUE -->
+  <xacro:arg name="base_ground_clearance" default="0.005"/> <!-- PROVISIONAL_DESIGN_VALUE -->
+  <xacro:arg name="wheel_radius" default="0.0325"/>
+  <xacro:arg name="wheel_width" default="0.027"/> <!-- REAL_ROBOT_CALIBRATION; provisional design value -->
+  <xacro:arg name="wheel_separation" default="0.220"/> <!-- REAL_ROBOT_CALIBRATION; provisional design value -->
+  <xacro:arg name="wheel_x" default="0.0"/> <!-- REAL_ROBOT_CALIBRATION; provisional design value -->
+  <xacro:arg name="caster_ball_radius" default="0.015"/> <!-- REAL_ROBOT_CALIBRATION; provisional design value -->
+  <xacro:arg name="caster_1_x" default="0.065"/> <!-- REAL_ROBOT_CALIBRATION; provisional design value -->
+  <xacro:arg name="caster_1_y" default="0.0"/> <!-- REAL_ROBOT_CALIBRATION; provisional design value -->
+  <xacro:arg name="caster_2_x" default="-0.065"/> <!-- REAL_ROBOT_CALIBRATION; provisional design value -->
+  <xacro:arg name="caster_2_y" default="0.0"/> <!-- REAL_ROBOT_CALIBRATION; provisional design value -->
+  <xacro:arg name="lidar_x" default="0.0"/> <!-- REAL_ROBOT_CALIBRATION; relative to base_link -->
+  <xacro:arg name="lidar_y" default="0.0"/> <!-- REAL_ROBOT_CALIBRATION; provisional design value -->
+  <!-- Center of the simple 55 mm-high LiDAR visual: its bottom rests on the deck. -->
+  <xacro:arg name="lidar_z" default="0.060"/> <!-- REAL_ROBOT_CALIBRATION; provisional design value -->
+  <xacro:arg name="lidar_roll" default="0.0"/> <!-- REAL_ROBOT_CALIBRATION -->
+  <xacro:arg name="lidar_pitch" default="0.0"/> <!-- REAL_ROBOT_CALIBRATION -->
+  <xacro:arg name="lidar_yaw" default="0.0"/> <!-- REAL_ROBOT_CALIBRATION -->
+  <xacro:arg name="imu_x" default="0.0"/> <!-- REAL_ROBOT_CALIBRATION; relative to base_link -->
+  <xacro:arg name="imu_y" default="0.0"/> <!-- REAL_ROBOT_CALIBRATION; provisional design value -->
+  <!-- Placeholder IMU visual also rests on the deck; final IMU pose is TBD. -->
+  <xacro:arg name="imu_z" default="0.045"/> <!-- REAL_ROBOT_CALIBRATION; provisional design value -->
+  <xacro:arg name="imu_roll" default="0.0"/> <!-- REAL_ROBOT_CALIBRATION -->
+  <xacro:arg name="imu_pitch" default="0.0"/> <!-- REAL_ROBOT_CALIBRATION -->
+  <xacro:arg name="imu_yaw" default="0.0"/> <!-- REAL_ROBOT_CALIBRATION -->
 
   <xacro:include filename="$(find predictive_nav_description)/urdf/materials.xacro"/>
   <xacro:include filename="$(find predictive_nav_description)/urdf/inertials.xacro"/>
@@ -14,12 +52,31 @@
   <xacro:include filename="$(find predictive_nav_description)/urdf/sensors.xacro"/>
   <xacro:include filename="$(find predictive_nav_description)/urdf/gazebo_plugins.xacro"/>
 
-  <xacro:predictive_nav_base robot_color="$(arg robot_color)"/>
-  <xacro:predictive_nav_wheels/>
-  <xacro:predictive_nav_lidar x="$(arg lidar_x)" y="$(arg lidar_y)" z="$(arg lidar_z)"/>
-  <xacro:predictive_nav_imu/>
+  <xacro:predictive_nav_base
+    robot_color="$(arg robot_color)"
+    base_radius="$(arg base_radius)"
+    base_height="$(arg base_height)"
+    base_ground_clearance="$(arg base_ground_clearance)"
+    base_link_z="$(arg wheel_radius)"/>
+  <xacro:predictive_nav_wheels
+    wheel_radius="$(arg wheel_radius)"
+    wheel_width="$(arg wheel_width)"
+    wheel_separation="$(arg wheel_separation)"
+    wheel_x="$(arg wheel_x)"
+    caster_ball_radius="$(arg caster_ball_radius)"
+    caster_1_x="$(arg caster_1_x)" caster_1_y="$(arg caster_1_y)"
+    caster_2_x="$(arg caster_2_x)" caster_2_y="$(arg caster_2_y)"/>
+  <xacro:predictive_nav_lidar
+    x="$(arg lidar_x)" y="$(arg lidar_y)" z="$(arg lidar_z)"
+    roll="$(arg lidar_roll)" pitch="$(arg lidar_pitch)" yaw="$(arg lidar_yaw)"/>
+  <xacro:predictive_nav_imu
+    x="$(arg imu_x)" y="$(arg imu_y)" z="$(arg imu_z)"
+    roll="$(arg imu_roll)" pitch="$(arg imu_pitch)" yaw="$(arg imu_yaw)"/>
 
   <xacro:if value="$(arg use_gazebo_plugins)">
-    <xacro:predictive_nav_gazebo_plugins topic_prefix="$(arg robot_name)"/>
+    <xacro:predictive_nav_gazebo_plugins
+      topic_prefix="$(arg robot_name)"
+      wheel_separation="$(arg wheel_separation)"
+      wheel_radius="$(arg wheel_radius)"/>
   </xacro:if>
 </robot>

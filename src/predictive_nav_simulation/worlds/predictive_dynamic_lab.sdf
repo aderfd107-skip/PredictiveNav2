@@ -1,0 +1,146 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <!--
+    Static baseline world for PredictiveNav2 dynamic-interaction experiments.
+    It intentionally contains NO dynamic actor.  First drive/map/validate this
+    geometry, save its map, and only then add one deterministic actor route at
+    a time in a separate dynamic-trial world or launch file.
+  -->
+  <world name="predictive_dynamic_lab">
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+
+    <gui fullscreen="0">
+      <camera name="overview_camera">
+        <pose>0 -12 18 0.95 0 0</pose>
+        <view_controller>orbit</view_controller>
+        <projection_type>perspective</projection_type>
+      </camera>
+    </gui>
+
+    <light name="sun" type="directional">
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.4 0.4 -0.8</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><plane><normal>0 0 1</normal><size>20 16</size></plane></geometry></collision>
+      </link>
+    </model>
+
+    <!-- All collision walls are 0.12 m thick and 1.2 m high.  Coordinates
+         are deliberately kept in this one static model for a readable,
+         version-controlled experiment layout. -->
+    <model name="static_experiment_geometry">
+      <static>true</static>
+      <link name="layout_link">
+        <!-- Outer boundary: 20 m x 16 m. -->
+        <collision name="north"><pose>0 7.94 0.6 0 0 0</pose><geometry><box><size>20 0.12 1.2</size></box></geometry></collision>
+        <visual name="north_visual"><pose>0 7.94 0.6 0 0 0</pose><geometry><box><size>20 0.12 1.2</size></box></geometry><material><diffuse>0.72 0.72 0.70 1</diffuse></material></visual>
+        <collision name="south"><pose>0 -7.94 0.6 0 0 0</pose><geometry><box><size>20 0.12 1.2</size></box></geometry></collision>
+        <visual name="south_visual"><pose>0 -7.94 0.6 0 0 0</pose><geometry><box><size>20 0.12 1.2</size></box></geometry><material><diffuse>0.72 0.72 0.70 1</diffuse></material></visual>
+        <collision name="east"><pose>9.94 0 0.6 0 0 0</pose><geometry><box><size>0.12 16 1.2</size></box></geometry></collision>
+        <visual name="east_visual"><pose>9.94 0 0.6 0 0 0</pose><geometry><box><size>0.12 16 1.2</size></box></geometry><material><diffuse>0.72 0.72 0.70 1</diffuse></material></visual>
+        <collision name="west"><pose>-9.94 0 0.6 0 0 0</pose><geometry><box><size>0.12 16 1.2</size></box></geometry></collision>
+        <visual name="west_visual"><pose>-9.94 0 0.6 0 0 0</pose><geometry><box><size>0.12 16 1.2</size></box></geometry><material><diffuse>0.72 0.72 0.70 1</diffuse></material></visual>
+
+        <!-- North-west open arena, nominally 5 m x 5 m. -->
+        <collision name="open_arena_east"><pose>-3.0 4.8 0.6 0 0 0</pose><geometry><box><size>0.12 5.6 1.2</size></box></geometry></collision>
+        <visual name="open_arena_east_visual"><pose>-3.0 4.8 0.6 0 0 0</pose><geometry><box><size>0.12 5.6 1.2</size></box></geometry><material><diffuse>0.60 0.64 0.68 1</diffuse></material></visual>
+        <collision name="open_arena_south_west"><pose>-7.6 2.0 0.6 0 0 0</pose><geometry><box><size>2.8 0.12 1.2</size></box></geometry></collision>
+        <visual name="open_arena_south_west_visual"><pose>-7.6 2.0 0.6 0 0 0</pose><geometry><box><size>2.8 0.12 1.2</size></box></geometry><material><diffuse>0.60 0.64 0.68 1</diffuse></material></visual>
+        <collision name="open_arena_south_east"><pose>-4.0 2.0 0.6 0 0 0</pose><geometry><box><size>1.2 0.12 1.2</size></box></geometry></collision>
+        <visual name="open_arena_south_east_visual"><pose>-4.0 2.0 0.6 0 0 0</pose><geometry><box><size>1.2 0.12 1.2</size></box></geometry><material><diffuse>0.60 0.64 0.68 1</diffuse></material></visual>
+
+        <!-- Central plus intersection: 1.10 m clear lanes and crossing. -->
+        <collision name="cross_south_west"><pose>-1.55 4.09 0.6 0 0 0</pose><geometry><box><size>1.9 0.12 1.2</size></box></geometry></collision>
+        <visual name="cross_south_west_visual"><pose>-1.55 4.09 0.6 0 0 0</pose><geometry><box><size>1.9 0.12 1.2</size></box></geometry><material><diffuse>0.56 0.60 0.64 1</diffuse></material></visual>
+        <collision name="cross_south_east"><pose>1.85 4.09 0.6 0 0 0</pose><geometry><box><size>3.0 0.12 1.2</size></box></geometry></collision>
+        <visual name="cross_south_east_visual"><pose>1.85 4.09 0.6 0 0 0</pose><geometry><box><size>3.0 0.12 1.2</size></box></geometry><material><diffuse>0.56 0.60 0.64 1</diffuse></material></visual>
+        <!-- Deliberately tight 0.44 m outlet between the west arena divider's
+             inner face (x=-2.94) and this wall (x=-2.50).  It is a static
+             corner stress case, not a nominal route.  Keep the Gazebo world
+             aligned with the saved SLAM map; evaluate controller changes here
+             without pretending this provisional clearance is a real robot
+             calibration value. -->
+        <collision name="cross_north_west"><pose>-1.55 5.31 0.6 0 0 0</pose><geometry><box><size>1.9 0.12 1.2</size></box></geometry></collision>
+        <visual name="cross_north_west_visual"><pose>-1.55 5.31 0.6 0 0 0</pose><geometry><box><size>1.9 0.12 1.2</size></box></geometry><material><diffuse>0.56 0.60 0.64 1</diffuse></material></visual>
+        <collision name="cross_north_east"><pose>1.85 5.31 0.6 0 0 0</pose><geometry><box><size>3.0 0.12 1.2</size></box></geometry></collision>
+        <visual name="cross_north_east_visual"><pose>1.85 5.31 0.6 0 0 0</pose><geometry><box><size>3.0 0.12 1.2</size></box></geometry><material><diffuse>0.56 0.60 0.64 1</diffuse></material></visual>
+        <collision name="cross_west_south"><pose>-0.61 3.05 0.6 0 0 0</pose><geometry><box><size>0.12 2.2 1.2</size></box></geometry></collision>
+        <visual name="cross_west_south_visual"><pose>-0.61 3.05 0.6 0 0 0</pose><geometry><box><size>0.12 2.2 1.2</size></box></geometry><material><diffuse>0.56 0.60 0.64 1</diffuse></material></visual>
+        <collision name="cross_west_north"><pose>-0.61 6.60 0.6 0 0 0</pose><geometry><box><size>0.12 2.5 1.2</size></box></geometry></collision>
+        <visual name="cross_west_north_visual"><pose>-0.61 6.60 0.6 0 0 0</pose><geometry><box><size>0.12 2.5 1.2</size></box></geometry><material><diffuse>0.56 0.60 0.64 1</diffuse></material></visual>
+        <collision name="cross_east_south"><pose>0.61 3.05 0.6 0 0 0</pose><geometry><box><size>0.12 2.2 1.2</size></box></geometry></collision>
+        <visual name="cross_east_south_visual"><pose>0.61 3.05 0.6 0 0 0</pose><geometry><box><size>0.12 2.2 1.2</size></box></geometry><material><diffuse>0.56 0.60 0.64 1</diffuse></material></visual>
+        <collision name="cross_east_north"><pose>0.61 6.60 0.6 0 0 0</pose><geometry><box><size>0.12 2.5 1.2</size></box></geometry></collision>
+        <visual name="cross_east_north_visual"><pose>0.61 6.60 0.6 0 0 0</pose><geometry><box><size>0.12 2.5 1.2</size></box></geometry><material><diffuse>0.56 0.60 0.64 1</diffuse></material></visual>
+
+        <!-- North-east head-on corridor: 5 m long and 1.10 m wide. -->
+        <collision name="head_on_lower"><pose>6.8 5.39 0.6 0 0 0</pose><geometry><box><size>5.8 0.12 1.2</size></box></geometry></collision>
+        <visual name="head_on_lower_visual"><pose>6.8 5.39 0.6 0 0 0</pose><geometry><box><size>5.8 0.12 1.2</size></box></geometry><material><diffuse>0.60 0.64 0.68 1</diffuse></material></visual>
+        <collision name="head_on_upper"><pose>6.8 6.61 0.6 0 0 0</pose><geometry><box><size>5.8 0.12 1.2</size></box></geometry></collision>
+        <visual name="head_on_upper_visual"><pose>6.8 6.61 0.6 0 0 0</pose><geometry><box><size>5.8 0.12 1.2</size></box></geometry><material><diffuse>0.60 0.64 0.68 1</diffuse></material></visual>
+
+        <!-- South-west blind L.  The inner corner blocks LiDAR before turn-in. -->
+        <collision name="blind_l_west"><pose>-8.80 -5.60 0.6 0 0 0</pose><geometry><box><size>0.12 3.8 1.2</size></box></geometry></collision>
+        <visual name="blind_l_west_visual"><pose>-8.80 -5.60 0.6 0 0 0</pose><geometry><box><size>0.12 3.8 1.2</size></box></geometry><material><diffuse>0.48 0.52 0.56 1</diffuse></material></visual>
+        <collision name="blind_l_east"><pose>-7.80 -5.10 0.6 0 0 0</pose><geometry><box><size>0.12 2.8 1.2</size></box></geometry></collision>
+        <visual name="blind_l_east_visual"><pose>-7.80 -5.10 0.6 0 0 0</pose><geometry><box><size>0.12 2.8 1.2</size></box></geometry><material><diffuse>0.48 0.52 0.56 1</diffuse></material></visual>
+        <collision name="blind_l_south"><pose>-6.55 -3.20 0.6 0 0 0</pose><geometry><box><size>2.6 0.12 1.2</size></box></geometry></collision>
+        <visual name="blind_l_south_visual"><pose>-6.55 -3.20 0.6 0 0 0</pose><geometry><box><size>2.6 0.12 1.2</size></box></geometry><material><diffuse>0.48 0.52 0.56 1</diffuse></material></visual>
+        <collision name="blind_l_north"><pose>-6.15 -2.20 0.6 0 0 0</pose><geometry><box><size>3.4 0.12 1.2</size></box></geometry></collision>
+        <visual name="blind_l_north_visual"><pose>-6.15 -2.20 0.6 0 0 0</pose><geometry><box><size>3.4 0.12 1.2</size></box></geometry><material><diffuse>0.48 0.52 0.56 1</diffuse></material></visual>
+
+        <!-- South-centre T junction: 1.00 m clear approach and cross lane. -->
+        <collision name="t_west_south"><pose>-1.56 -5.45 0.6 0 0 0</pose><geometry><box><size>0.12 3.0 1.2</size></box></geometry></collision>
+        <visual name="t_west_south_visual"><pose>-1.56 -5.45 0.6 0 0 0</pose><geometry><box><size>0.12 3.0 1.2</size></box></geometry><material><diffuse>0.52 0.56 0.60 1</diffuse></material></visual>
+        <collision name="t_east_south"><pose>-0.44 -5.45 0.6 0 0 0</pose><geometry><box><size>0.12 3.0 1.2</size></box></geometry></collision>
+        <visual name="t_east_south_visual"><pose>-0.44 -5.45 0.6 0 0 0</pose><geometry><box><size>0.12 3.0 1.2</size></box></geometry><material><diffuse>0.52 0.56 0.60 1</diffuse></material></visual>
+        <collision name="t_cross_south_left"><pose>-2.85 -4.01 0.6 0 0 0</pose><geometry><box><size>3.2 0.12 1.2</size></box></geometry></collision>
+        <visual name="t_cross_south_left_visual"><pose>-2.85 -4.01 0.6 0 0 0</pose><geometry><box><size>3.2 0.12 1.2</size></box></geometry><material><diffuse>0.52 0.56 0.60 1</diffuse></material></visual>
+        <collision name="t_cross_south_right"><pose>1.85 -4.01 0.6 0 0 0</pose><geometry><box><size>3.2 0.12 1.2</size></box></geometry></collision>
+        <visual name="t_cross_south_right_visual"><pose>1.85 -4.01 0.6 0 0 0</pose><geometry><box><size>3.2 0.12 1.2</size></box></geometry><material><diffuse>0.52 0.56 0.60 1</diffuse></material></visual>
+        <collision name="t_cross_north_left"><pose>-2.85 -2.89 0.6 0 0 0</pose><geometry><box><size>3.2 0.12 1.2</size></box></geometry></collision>
+        <visual name="t_cross_north_left_visual"><pose>-2.85 -2.89 0.6 0 0 0</pose><geometry><box><size>3.2 0.12 1.2</size></box></geometry><material><diffuse>0.52 0.56 0.60 1</diffuse></material></visual>
+        <collision name="t_cross_north_right"><pose>1.85 -2.89 0.6 0 0 0</pose><geometry><box><size>3.2 0.12 1.2</size></box></geometry></collision>
+        <visual name="t_cross_north_right_visual"><pose>1.85 -2.89 0.6 0 0 0</pose><geometry><box><size>3.2 0.12 1.2</size></box></geometry><material><diffuse>0.52 0.56 0.60 1</diffuse></material></visual>
+        <collision name="t_north_cap"><pose>-1.0 -2.33 0.6 0 0 0</pose><geometry><box><size>1.12 0.12 1.2</size></box></geometry></collision>
+        <visual name="t_north_cap_visual"><pose>-1.0 -2.33 0.6 0 0 0</pose><geometry><box><size>1.12 0.12 1.2</size></box></geometry><material><diffuse>0.52 0.56 0.60 1</diffuse></material></visual>
+
+        <!-- South-east 90 degree turn, nominally 0.90 m wide. -->
+        <collision name="turn90_lower"><pose>2.80 -6.51 0.6 0 0 0</pose><geometry><box><size>3.6 0.12 1.2</size></box></geometry></collision>
+        <visual name="turn90_lower_visual"><pose>2.80 -6.51 0.6 0 0 0</pose><geometry><box><size>3.6 0.12 1.2</size></box></geometry><material><diffuse>0.48 0.52 0.56 1</diffuse></material></visual>
+        <collision name="turn90_upper"><pose>2.80 -5.49 0.6 0 0 0</pose><geometry><box><size>2.2 0.12 1.2</size></box></geometry></collision>
+        <visual name="turn90_upper_visual"><pose>2.80 -5.49 0.6 0 0 0</pose><geometry><box><size>2.2 0.12 1.2</size></box></geometry><material><diffuse>0.48 0.52 0.56 1</diffuse></material></visual>
+        <collision name="turn90_inner"><pose>4.04 -4.55 0.6 0 0 0</pose><geometry><box><size>0.12 2.1 1.2</size></box></geometry></collision>
+        <visual name="turn90_inner_visual"><pose>4.04 -4.55 0.6 0 0 0</pose><geometry><box><size>0.12 2.1 1.2</size></box></geometry><material><diffuse>0.48 0.52 0.56 1</diffuse></material></visual>
+        <collision name="turn90_outer"><pose>5.06 -4.10 0.6 0 0 0</pose><geometry><box><size>0.12 3.0 1.2</size></box></geometry></collision>
+        <visual name="turn90_outer_visual"><pose>5.06 -4.10 0.6 0 0 0</pose><geometry><box><size>0.12 3.0 1.2</size></box></geometry><material><diffuse>0.48 0.52 0.56 1</diffuse></material></visual>
+
+        <!-- East narrow passing corridor: 5 m long, 0.70 m clear width.
+             Recalculate after final robot and actor radii are calibrated. -->
+        <collision name="narrow_west"><pose>7.39 -4.80 0.6 0 0 0</pose><geometry><box><size>0.12 5.4 1.2</size></box></geometry></collision>
+        <visual name="narrow_west_visual"><pose>7.39 -4.80 0.6 0 0 0</pose><geometry><box><size>0.12 5.4 1.2</size></box></geometry><material><diffuse>0.42 0.46 0.50 1</diffuse></material></visual>
+        <collision name="narrow_east"><pose>8.21 -4.80 0.6 0 0 0</pose><geometry><box><size>0.12 5.4 1.2</size></box></geometry></collision>
+        <visual name="narrow_east_visual"><pose>8.21 -4.80 0.6 0 0 0</pose><geometry><box><size>0.12 5.4 1.2</size></box></geometry><material><diffuse>0.42 0.46 0.50 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <!-- Visual-only staging and goal pads.  They are not obstacles and are
+         intentionally excluded from collision / the saved occupancy map. -->
+    <!-- Central lower staging area: clear of the blind-L and T-junction walls. -->
+    <model name="mapping_start_pad"><static>true</static><pose>-4.5 -6.8 0.008 0 0 0</pose><link name="link"><visual name="visual"><geometry><box><size>0.55 0.55 0.016</size></box></geometry><material><diffuse>0.05 0.30 0.95 0.65</diffuse></material></visual></link></model>
+    <model name="open_arena_goal_pad"><static>true</static><pose>-5.5 4.6 0.008 0 0 0</pose><link name="link"><visual name="visual"><geometry><cylinder><radius>0.12</radius><length>0.016</length></cylinder></geometry><material><diffuse>0.05 0.70 0.35 0.9</diffuse></material></visual></link></model>
+    <model name="crossing_goal_pad"><static>true</static><pose>2.5 4.7 0.008 0 0 0</pose><link name="link"><visual name="visual"><geometry><cylinder><radius>0.12</radius><length>0.016</length></cylinder></geometry><material><diffuse>0.95 0.55 0.05 0.9</diffuse></material></visual></link></model>
+  </world>
+</sdf>

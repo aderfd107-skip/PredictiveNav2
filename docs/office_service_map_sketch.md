@@ -19,7 +19,7 @@ y: -5.0 ~ 5.0
 ```text
 robot_1 / robot_2:
   length: about 0.70m
-  width: about 0.46m
+  width: update after real robot calibration; current circular chassis diameter is 0.22m
 ```
 
 通道建议（2026-07-07 修改后）：
@@ -29,7 +29,7 @@ main corridor: 1.8m
 door opening: 1.5m - 1.7m
 narrow passage (x): 1.25m
 narrow passage (y): 1.25m
-min robot clearance: robot is 0.46m wide, so min passage >= 1.0m
+min robot clearance: calculate from final maximum mechanical radius and Nav2 safety margin
 ```
 
 ## 1. Top-Down Sketch

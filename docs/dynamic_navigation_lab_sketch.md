@@ -1,5 +1,10 @@
-# Dynamic Navigation Lab 场景说明
+# Predictive Dynamic Lab 场景说明
 
-世界文件为 `dynamic_navigation_lab.sdf`，尺寸约 14 m × 10 m。现有静态墙体、主走廊、窄通道、开阔区和目标 Marker 保留，用于建立可复现的动态避障场景。
+新的静态基线世界为 `predictive_dynamic_lab.sdf`，尺寸 `20 m × 16 m`，不含任何动态 actor。
+它包含开放区、十字横穿区、迎面走廊、盲区 L 转角、T 字路口、90° 转角和 `0.70 m`
+临时设计宽度的窄通道。启动入口是 `predictive_dynamic_lab_static.launch.py`；mapping launch
+也默认使用该世界。
 
-自车起点为约 `(5.8, -3.85, 1.57)`；目标 Marker 仅是可视化地标，不表达配送或巡检任务。后续每个动态 actor 场景必须以 YAML 定义起点、轨迹、速度、半径、随机种子和终止条件，并覆盖横穿、迎面、窄通道会车、临时阻塞与多目标交叉。
+先在此世界手动驱动机器人，检查碰撞、LiDAR 遮挡、通道宽度和可达性，并保存新的静态地图。只有
+静态 Nav2/MPPI 基线稳定后，才在单独 launch 中引入一个可复现 actor。actor 的真值轨迹不能直接
+提供给 tracking、prediction 或 DynamicRiskCritic。

@@ -1,27 +1,28 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
-  <xacro:macro name="predictive_nav_wheels">
+  <xacro:macro name="predictive_nav_wheels" params="wheel_radius:=0.0325 wheel_width:=0.027 wheel_separation:=0.220 wheel_x:=0.0 caster_ball_radius:=0.015 caster_1_x:=0.065 caster_1_y:=0.0 caster_2_x:=-0.065 caster_2_y:=0.0">
     <link name="left_wheel_link">
       <visual>
         <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
         <geometry>
-          <cylinder radius="0.08" length="0.045"/>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
         </geometry>
         <material name="predictive_nav_black"/>
       </visual>
       <collision>
         <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
         <geometry>
-          <cylinder radius="0.08" length="0.045"/>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
         </geometry>
       </collision>
-      <xacro:predictive_nav_cylinder_inertia_x mass="0.75" radius="0.08" length="0.045"/>
+      <xacro:predictive_nav_cylinder_inertia_x mass="0.18" radius="${wheel_radius}" length="${wheel_width}"/>
     </link>
 
     <joint name="left_wheel_joint" type="continuous">
       <parent link="base_link"/>
       <child link="left_wheel_link"/>
-      <origin xyz="0 0.255 -0.015" rpy="0 0 0"/>
+      <origin xyz="${wheel_x} ${wheel_separation / 2.0} 0" rpy="0 0 0"/>
+      <!-- ROS convention: +Y wheel axle, +X forward. -->
       <axis xyz="0 1 0"/>
     </joint>
 
@@ -29,70 +30,71 @@
       <visual>
         <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
         <geometry>
-          <cylinder radius="0.08" length="0.045"/>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
         </geometry>
         <material name="predictive_nav_black"/>
       </visual>
       <collision>
         <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
         <geometry>
-          <cylinder radius="0.08" length="0.045"/>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
         </geometry>
       </collision>
-      <xacro:predictive_nav_cylinder_inertia_x mass="0.75" radius="0.08" length="0.045"/>
+      <xacro:predictive_nav_cylinder_inertia_x mass="0.18" radius="${wheel_radius}" length="${wheel_width}"/>
     </link>
 
     <joint name="right_wheel_joint" type="continuous">
       <parent link="base_link"/>
       <child link="right_wheel_link"/>
-      <origin xyz="0 -0.255 -0.015" rpy="0 0 0"/>
+      <origin xyz="${wheel_x} ${-wheel_separation / 2.0} 0" rpy="0 0 0"/>
       <axis xyz="0 1 0"/>
     </joint>
 
+    <!-- Two passive ball casters.  Their size and mounting points are calibration items. -->
     <link name="front_caster_link">
       <visual>
         <origin xyz="0 0 0" rpy="0 0 0"/>
         <geometry>
-          <sphere radius="0.035"/>
+          <sphere radius="${caster_ball_radius}"/>
         </geometry>
         <material name="predictive_nav_light_grey"/>
       </visual>
       <collision>
         <origin xyz="0 0 0" rpy="0 0 0"/>
         <geometry>
-          <sphere radius="0.035"/>
+          <sphere radius="${caster_ball_radius}"/>
         </geometry>
       </collision>
-      <xacro:predictive_nav_cylinder_inertia_z mass="0.2" radius="0.035" length="0.035"/>
+      <xacro:predictive_nav_cylinder_inertia_z mass="0.05" radius="${caster_ball_radius}" length="${caster_ball_radius * 2.0}"/>
     </link>
 
     <joint name="front_caster_joint" type="fixed">
       <parent link="base_link"/>
       <child link="front_caster_link"/>
-      <origin xyz="0.24 0 -0.06" rpy="0 0 0"/>
+      <origin xyz="${caster_1_x} ${caster_1_y} ${caster_ball_radius - wheel_radius}" rpy="0 0 0"/>
     </joint>
 
     <link name="rear_caster_link">
       <visual>
         <origin xyz="0 0 0" rpy="0 0 0"/>
         <geometry>
-          <sphere radius="0.035"/>
+          <sphere radius="${caster_ball_radius}"/>
         </geometry>
         <material name="predictive_nav_light_grey"/>
       </visual>
       <collision>
         <origin xyz="0 0 0" rpy="0 0 0"/>
         <geometry>
-          <sphere radius="0.035"/>
+          <sphere radius="${caster_ball_radius}"/>
         </geometry>
       </collision>
-      <xacro:predictive_nav_cylinder_inertia_z mass="0.2" radius="0.035" length="0.035"/>
+      <xacro:predictive_nav_cylinder_inertia_z mass="0.05" radius="${caster_ball_radius}" length="${caster_ball_radius * 2.0}"/>
     </link>
 
     <joint name="rear_caster_joint" type="fixed">
       <parent link="base_link"/>
       <child link="rear_caster_link"/>
-      <origin xyz="-0.24 0 -0.06" rpy="0 0 0"/>
+      <origin xyz="${caster_2_x} ${caster_2_y} ${caster_ball_radius - wheel_radius}" rpy="0 0 0"/>
     </joint>
   </xacro:macro>
 </robot>

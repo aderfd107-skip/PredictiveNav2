@@ -47,7 +47,7 @@ class StaticWorldMarkerPublisher(Node):
         super().__init__("static_world_marker_publisher")
         default_world = (
             get_package_share_directory("predictive_nav_simulation")
-            + "/worlds/dynamic_navigation_lab.sdf"
+            + "/worlds/predictive_dynamic_lab.sdf"
         )
         self.declare_parameter("world_file", default_world)
 
@@ -80,7 +80,7 @@ class StaticWorldMarkerPublisher(Node):
                         marker_id,
                         model_name,
                         [0.0, 0.0, -0.01, 0.0, 0.0, 0.0],
-                        [14.5, 10.5, 0.02],
+                        [20.0, 16.0, 0.02],
                         [0.26, 0.27, 0.29, 0.45],
                     )
                 )

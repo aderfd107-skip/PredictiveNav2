@@ -71,7 +71,9 @@ controller_server:
       yaw_goal_tolerance: 0.35
     FollowPath:
       plugin: dwb_core::DWBLocalPlanner
-      debug_trajectory_details: false
+      # Diagnostic only: publishes DWB candidate trajectories and critic
+      # scores. It does not alter trajectory generation or command output.
+      debug_trajectory_details: true
       min_vel_x: 0.0
       max_vel_x: 0.35
       max_vel_theta: 0.70
@@ -159,8 +161,16 @@ local_costmap:
       rolling_window: true
       width: 6
       height: 6
-      resolution: 0.05
-      footprint: "[[-0.36, -0.30], [-0.36, 0.30], [0.36, 0.30], [0.36, -0.30]]"
+      # Match the 0.025 m SDF-derived truth map for the narrow-passage test.
+      # This keeps the 0.44 m outlet represented by about 17 cells instead of
+      # eight; it does not reduce robot_radius or soften collision checking.
+      resolution: 0.025
+      # PROVISIONAL_DESIGN_VALUE (not a measured hardware dimension):
+      # base radius 0.110 m + current design wheel overhang 0.0135 m +
+      # 0.0115 m simulation margin.  Replace after measuring the actual
+      # maximum mechanical radius.  Keep this equal to future MPPI
+      # DynamicRiskCritic.robot_radius_m before adding critic-specific margin.
+      robot_radius: 0.135
       always_send_full_costmap: true
       plugins: ["obstacle_layer", "inflation_layer"]
       obstacle_layer:
@@ -189,8 +199,11 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_footprint
-      resolution: 0.05
-      footprint: "[[-0.36, -0.30], [-0.36, 0.30], [0.36, 0.30], [0.36, -0.30]]"
+      # Keep the global planner at the same resolution as the static map and
+      # local controller.  Benchmark controller-loop rate after this change.
+      resolution: 0.025
+      # Keep equal to local_costmap.robot_radius; see its calibration note.
+      robot_radius: 0.135
       track_unknown_space: true
       always_send_full_costmap: true
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]

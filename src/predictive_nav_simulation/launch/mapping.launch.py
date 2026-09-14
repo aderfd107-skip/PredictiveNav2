@@ -15,7 +15,9 @@ from lifecycle_msgs.msg import Transition
 
 def generate_launch_description():
     sim_dir = get_package_share_directory("predictive_nav_simulation")
-    simulation_launch = os.path.join(sim_dir, "launch", "dynamic_navigation_lab.launch.py")
+    simulation_launch = os.path.join(
+        sim_dir, "launch", "predictive_dynamic_lab_static.launch.py"
+    )
     mapping_params = os.path.join(sim_dir, "config", "mapping.yaml")
     rviz_config = os.path.join(sim_dir, "rviz", "mapping.rviz")
     use_sim_time = LaunchConfiguration("use_sim_time")
@@ -48,7 +50,10 @@ def generate_launch_description():
             launch_arguments={
                 "use_rviz": "false",
                 "use_world_odom_anchor": "false",
-                "enable_dynamic_obstacle": "false",
+                # DiffDrive subscribes to /cmd_vel_safe.  Keep the existing
+                # guard enabled during manual mapping so teleop's /cmd_vel is
+                # forwarded through the same safe command path as the old lab.
+                "enable_scan_safety_guard": "true",
             }.items(),
         ),
         slam_node,
