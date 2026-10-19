@@ -7,6 +7,10 @@ log/
 # storage rather than the source repository).
 bags/
 
+# Raw MPPI experiment recordings are kept locally. The corresponding notes
+# live in docs/experiments/ and are safe to commit.
+artifacts/rosbags/
+
 __pycache__/
 *.py[cod]
 

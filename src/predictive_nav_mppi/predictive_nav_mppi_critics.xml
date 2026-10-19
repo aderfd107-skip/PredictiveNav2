@@ -1,0 +1,5 @@
+<!--
+  Step 06 will define the pluginlib <library> and <class> entries here.
+  It remains intentionally uninstalled and unused during the package-skeleton
+  step, so this file cannot make Nav2 load an unfinished critic.
+-->

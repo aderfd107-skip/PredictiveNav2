@@ -136,6 +136,39 @@
       </link>
     </model>
 
+    <!-- Dynamic actors use the same SDF + SetEntityPose pattern as the
+         original dynamic_navigation_lab. They begin outside this map during
+         the static baseline; predictive_dynamic_lab_dynamic.launch.py moves
+         them into their deterministic routes. The truth-map generator reads
+         only static_experiment_geometry, so these models never enter AMCL's
+         static reference map. -->
+    <model name="dynamic_obstacle_actor">
+      <static>true</static>
+      <pose>100 100 0.475 0 0 0</pose>
+      <link name="base_link">
+        <collision name="collision"><geometry><box><size>0.45 0.45 0.95</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.45 0.45 0.95</size></box></geometry><material><ambient>0.95 0.20 0.08 1</ambient><diffuse>0.95 0.20 0.08 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="dynamic_obstacle_center_actor">
+      <static>true</static>
+      <pose>102 100 0.475 0 0 0</pose>
+      <link name="base_link">
+        <collision name="collision"><geometry><box><size>0.42 0.42 0.95</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.42 0.42 0.95</size></box></geometry><material><ambient>0.95 0.20 0.08 1</ambient><diffuse>0.95 0.20 0.08 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="dynamic_obstacle_upper_actor">
+      <static>true</static>
+      <pose>104 100 0.475 0 0 0</pose>
+      <link name="base_link">
+        <collision name="collision"><geometry><box><size>0.42 0.42 0.95</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.42 0.42 0.95</size></box></geometry><material><ambient>0.95 0.20 0.08 1</ambient><diffuse>0.95 0.20 0.08 1</diffuse></material></visual>
+      </link>
+    </model>
+
     <!-- Visual-only staging and goal pads.  They are not obstacles and are
          intentionally excluded from collision / the saved occupancy map. -->
     <!-- Central lower staging area: clear of the blind-L and T-junction walls. -->

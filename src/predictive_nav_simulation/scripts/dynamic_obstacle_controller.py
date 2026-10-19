@@ -33,6 +33,7 @@ class DynamicObstacleController(Node):
         self.declare_parameter("loop", True)
         self.declare_parameter("start_on_launch", True)
         self.declare_parameter("actor_name", "dynamic_obstacle_actor")
+        self.declare_parameter("world_name", "dynamic_navigation_lab")
 
         self.start_x = float(self.get_parameter("start_x").value)
         self.start_y = float(self.get_parameter("start_y").value)
@@ -41,6 +42,7 @@ class DynamicObstacleController(Node):
         self.speed = max(0.01, float(self.get_parameter("speed").value))
         self.loop = bool(self.get_parameter("loop").value)
         self.actor_name = str(self.get_parameter("actor_name").value)
+        self.world_name = str(self.get_parameter("world_name").value)
         update_rate = max(1.0, float(self.get_parameter("update_rate").value))
 
         self.dx = self.end_x - self.start_x
@@ -54,9 +56,11 @@ class DynamicObstacleController(Node):
         self.running = bool(self.get_parameter("start_on_launch").value)
         self.last_time = None
         self.service_ready_reported = False
+        self.actor_pose_confirmed = False
+        self.last_pose_failure_log_time = None
 
         self.pose_client = self.create_client(
-            SetEntityPose, "/world/dynamic_navigation_lab/set_pose"
+            SetEntityPose, f"/world/{self.world_name}/set_pose"
         )
         self.ground_truth_publisher = self.create_publisher(
             Marker, "/dynamic_obstacle/ground_truth_marker", 10
@@ -156,7 +160,38 @@ class DynamicObstacleController(Node):
         request.pose.position.z = 0.475
         request.pose.orientation.z = math.sin(yaw / 2.0)
         request.pose.orientation.w = math.cos(yaw / 2.0)
-        self.pose_client.call_async(request)
+        future = self.pose_client.call_async(request)
+        future.add_done_callback(self.pose_response_callback)
+
+    def pose_response_callback(self, future):
+        """Report whether Gazebo accepted the named actor, not just the service."""
+        try:
+            response = future.result()
+        except Exception as error:
+            self.log_pose_failure(f"set_pose call failed: {error}")
+            return
+
+        if response.success:
+            if not self.actor_pose_confirmed:
+                self.actor_pose_confirmed = True
+                self.get_logger().info(
+                    f"Dynamic actor '{self.actor_name}' is spawned and moving."
+                )
+            return
+
+        self.log_pose_failure(
+            f"Gazebo rejected set_pose for '{self.actor_name}'. "
+            "Check that its spawn node completed successfully."
+        )
+
+    def log_pose_failure(self, message):
+        now = self.get_clock().now()
+        if self.last_pose_failure_log_time is not None:
+            age_s = (now - self.last_pose_failure_log_time).nanoseconds * 1e-9
+            if age_s < 2.0:
+                return
+        self.last_pose_failure_log_time = now
+        self.get_logger().error(message)
 
     def publish_ground_truth_marker(self, x, y, yaw):
         marker = Marker()

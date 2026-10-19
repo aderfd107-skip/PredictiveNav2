@@ -19,9 +19,9 @@ class ScanSafetyGuard(Node):
     lag, oscillation, and brief direction reversals during teleop.
 
     Responsibilities kept here:
-      * laser-based speed scaling near obstacles
-      * angular velocity is scaled together with linear so the robot
-        does not pivot in place near walls (the main wobble source)
+      * laser-based prevention of translational contact with obstacles
+      * allow pure rotation for this circular robot, because rotating in
+        place does not enlarge its collision envelope
       * stale-command timeout (auto-stop when the pilot stops sending)
     """
 
@@ -30,6 +30,7 @@ class ScanSafetyGuard(Node):
 
         self.declare_parameter("stop_distance", 0.48)
         self.declare_parameter("slow_distance", 0.85)
+        self.declare_parameter("body_stop_distance", 0.16)
         self.declare_parameter("front_sector_degrees", 46.0)
         self.declare_parameter("rear_sector_degrees", 42.0)
         self.declare_parameter("publish_rate", 30.0)
@@ -39,6 +40,9 @@ class ScanSafetyGuard(Node):
         self.stop_distance = self.get_float_parameter("stop_distance")
         self.slow_distance = max(
             self.get_float_parameter("slow_distance"), self.stop_distance
+        )
+        self.body_stop_distance = max(
+            0.0, self.get_float_parameter("body_stop_distance")
         )
         self.front_sector = math.radians(
             self.get_float_parameter("front_sector_degrees")
@@ -56,6 +60,7 @@ class ScanSafetyGuard(Node):
         self.last_cmd_time = None
         self.front_distance = math.inf
         self.rear_distance = math.inf
+        self.body_distance = math.inf
 
         self.publisher = self.create_publisher(Twist, "cmd_vel_out", 10)
         self.create_subscription(Twist, "cmd_vel_in", self.on_cmd, 10)
@@ -65,8 +70,8 @@ class ScanSafetyGuard(Node):
         self.timer = self.create_timer(1.0 / publish_rate, self.publish_guarded_cmd)
 
         self.get_logger().info(
-            "Scan safety guard active: stop <= %.2f m, slow <= %.2f m"
-            % (self.stop_distance, self.slow_distance)
+            "Scan safety guard active: body stop <= %.2f m, directional stop <= %.2f m, slow <= %.2f m"
+            % (self.body_stop_distance, self.stop_distance, self.slow_distance)
         )
 
     def get_float_parameter(self, name):
@@ -81,10 +86,12 @@ class ScanSafetyGuard(Node):
     def on_scan(self, msg):
         front = []
         rear = []
+        valid_ranges = []
 
         angle = msg.angle_min
         for distance in msg.ranges:
             if math.isfinite(distance) and msg.range_min <= distance <= msg.range_max:
+                valid_ranges.append(distance)
                 normalized = math.atan2(math.sin(angle), math.cos(angle))
                 if abs(normalized) <= self.front_sector * 0.5:
                     front.append(distance)
@@ -94,6 +101,9 @@ class ScanSafetyGuard(Node):
 
         raw_front = min(front) if front else math.inf
         raw_rear = min(rear) if rear else math.inf
+        # Keep this unsmoothed: it is the final collision guard, so a newly
+        # observed nearby wall must block translation on the same scan frame.
+        self.body_distance = min(valid_ranges) if valid_ranges else math.inf
 
         # Exponential moving average so single-frame laser jitter or a wall
         # that briefly enters the sector during a turn does not cause speed
@@ -153,12 +163,19 @@ class ScanSafetyGuard(Node):
         self.publisher.publish(cmd)
 
     def _apply_laser_safety(self, cmd):
-        """Scale velocities based on closest obstacle in each direction.
+        """Block unsafe translation while retaining safe in-place rotation.
 
-        Both linear *and* angular velocity are scaled by the same factor
-        so the robot does not pivot in place when the laser briefly
-        catches a side wall during a turn or in a narrow passage.
+        ``body_distance`` covers all laser directions. It prevents a side
+        wall from being ignored when the robot is simultaneously translating
+        and turning. The robot model is circular, so a command with exactly
+        zero linear velocity can rotate without sweeping additional space;
+        keeping angular velocity lets Nav2 reorient away from a corner rather
+        than getting permanently stuck beside it.
         """
+        if self.body_distance <= self.body_stop_distance:
+            cmd.linear.x = 0.0
+            return cmd
+
         front_scale = self._speed_scale(self.front_distance)
         rear_scale = self._speed_scale(self.rear_distance)
 
@@ -166,11 +183,6 @@ class ScanSafetyGuard(Node):
             cmd.linear.x *= front_scale
         elif cmd.linear.x < 0.0:
             cmd.linear.x *= rear_scale
-
-        # Scale angular velocity together with linear so near-wall
-        # slowdown is smooth rather than pivoting.
-        ang_scale = min(front_scale, rear_scale)
-        cmd.angular.z *= ang_scale
 
         return cmd
 

@@ -1,6 +1,6 @@
 # PredictiveNav2 项目进度
 
-> **最后更新：2026-08-28**
+> **最后更新：2026-10-12**
 >
 > 本文件记录项目“实际已经完成并验证的内容”，不把设计目标当作既有功能。后续每次对项目做实质修改时，应同步更新“当前状态”和“变更记录”。完整技术设计见 [PROJECT_SPEC.md](PROJECT_SPEC.md)。
 
@@ -19,17 +19,21 @@ PredictiveNav2 最终要实现：机器人用 2D LiDAR 发现并跟踪动态障�
 
 | 模块 | 状态 | 说明 |
 |---|---|---|
-| 机器人模型与传感器 | 已完成 | 差速底盘、2D LiDAR、IMU、TF、里程计。 |
-| Gazebo 场景与静态地图 | 已完成 | 单机器人室内实验场景、地图和 ROS-Gazebo bridge。 |
-| 基础激光安全过滤 | 已完成 | `scan_safety_guard.py` 对近距离障碍限速/停车；它不是预测风险算法。 |
-| AMCL + Nav2 DWB 静态导航 | 已完成 | 已知地图定位、全局规划、DWB 局部控制、RViz 发导航目标。 |
-| 动态障碍物 actor | 已完成 | 3 个可复位 Gazebo 方块，覆盖下方、中央、右上通道，可由 ROS 2 服务启停。 |
-| LiDAR 聚类/动态目标检测 | 已开始（已发布且可视化） | `predictive_nav_perception/scan_info_node` 已用 C++ 订阅 `/scan`、筛除无效量程、生成 `odom` 点并做顺序欧氏聚类，发布 `/dynamic_obstacles/clusters` 和仅调试用的 RViz MarkerArray；它仍只是几何候选观测，尚未判断动态性。 |
-| 多目标跟踪与 CV 卡尔曼滤波 | 已开始（Track topic 与 RViz 调试 Marker 已构建） | `predictive_nav_tracking/tracking_node` 已订阅 cluster、验证 `dt`，并实现 CV predict、距离 gate 内的贪心一对一关联、Kalman update、递增稳定 ID、新生与丢失删除；现已发布 `/dynamic_obstacles/tracks` 和只供人眼验证的 `/dynamic_obstacles/track_markers`。动态场景运行期验证待完成；尚未实现 Hungarian/Mahalanobis、Track 确认机制或动态性分类。 |
-| 轨迹预测 | 未开始 | 尚无未来位置和不确定性预测消息。 |
-| 原版 Nav2 MPPI baseline | 未开始 | 已安装相关依赖，但尚未配置和验证。 |
+| 机器人模型与传感器 | 已完成 | 圆形差速底盘、2D LiDAR、IMU、`map → odom → base_footprint` TF 和里程计。Nav2 规划半径为 `0.135 m`，不能为通过窄道而缩小。 |
+| Gazebo 场景与静态地图 | 已完成 | 单机器人室内实验场景、SDF 派生真值地图（`0.025 m` 分辨率）和 ROS-Gazebo bridge。 |
+| 最终激光安全闸门 | 已完成并接入静态基线 | `scan_safety_guard.py` 负责最后一层平移防撞：任意方向距离 ≤ `0.16 m` 或前/后向距离 ≤ `0.20 m` 时禁止对应平移；圆形底盘的纯原地转向保留。它不是预测风险算法。 |
+| AMCL + Nav2 DWB 静态导航 | 已完成 | 已知地图定位、全局规划、DWB 局部控制、RViz 目标、局部/全局 costmap 可视化及 DWB 评分诊断。 |
+| 自动拐角预对齐与目标抢占 | 已完成（V1） | RViz 单击最终目标后，bridge 根据全局路径插入拐角前对齐与转弯后退出航点；新目标可安全取消旧小段并重新规划。它不改 DWB/footprint/costmap，尚不等价于完整局部规划器。 |
+| 动态障碍物 actor | 已完成，待作为下一阶段输入验证 | 3 个可复位 Gazebo 方块，覆盖下方、中央、右上通道，可由 ROS 2 服务启停。动态实验先在中央开阔区进行。 |
+| LiDAR 聚类/动态目标检测 | 已完成 baseline | `predictive_nav_perception/scan_info_node` 用 C++ 订阅 `/scan`、筛除无效量程、生成 `odom` 点并做顺序欧氏聚类，发布 `/dynamic_obstacles/clusters` 和 RViz MarkerArray；它仍只是几何候选观测，尚未判断动态性。 |
+| 多目标跟踪与 CV 卡尔曼滤波 | 已完成 baseline | `tracking_node` 已实现 CV predict、距离 gate 内贪心一对一关联、Kalman update、递增稳定 ID、新生与丢失删除，发布 `/dynamic_obstacles/tracks` 与调试 Marker；尚未实现 Hungarian/Mahalanobis、Track 确认机制或动态性分类。 |
+| 轨迹预测 | 已完成 baseline | `prediction_node` 基于已接受 Track 发布 `/dynamic_obstacles/predictions`：2 秒预测窗、`0.2 s` 间隔、CV 预测与二维位置协方差；对过期、低置信度和连续丢失 Track 进行拒绝。 |
+| 原版 Nav2 MPPI baseline | 已完成首轮动态运行记录 | 独立 MPPI YAML 已用于真值地图；Run 01 录制了动态方块、LiDAR、局部 costmap、里程计与速度命令。结论及数据边界见 `docs/experiments/04_02_original_mppi_dynamic_run_01.md`；尚未形成多次统计 benchmark。 |
 | DynamicRiskCritic | 未开始 | 尚未实现自定义 MPPI critic。 |
-| Benchmark / 数据导出 | 未开始 | 尚无自动场景、指标统计或结果图表。 |
+| Benchmark / 数据导出 | 已有 rosbag 回放与排错基础，自动化指标未完成 | 还没有正式的多场景成功率、最小间距和耗时统计。 |
+
+当前静态阶段的结论、边界和面试表达见
+[docs/static_navigation_checkpoint.md](docs/static_navigation_checkpoint.md)。
 
 ## 已验证的运行能力
 
@@ -46,6 +50,15 @@ ros2 launch predictive_nav_bringup nav_baseline.launch.py
 已完成一次端到端 smoke test：向 `/navigate_to_pose` 发送 `(5.8, -2.5)`，机器人从约 `(5.76, -3.80)` 行驶至约 `(5.81, -2.69)`，动作结果为 `SUCCEEDED`，恢复次数为 0。
 
 ## 变更记录
+
+### 2026-09-21 — 静态安全导航检查点与窄通道结论
+
+- 静态实验改用 SDF 派生的真值地图（分辨率 `0.025 m`），局部/全局 costmap 同步为 `0.025 m`；保持 `robot_radius=0.135 m`、`inflation_radius=0.42 m` 和 DWB `PathDist.scale=32.0`，没有以缩小机器人或降低评分的方式换取通过率。
+- 新增 `corner_alignment_executor.py` 和常驻的 `corner_alignment_goal_bridge.py`。RViz 的 `2D Goal Pose` 发布到 `/corner_alignment/goal`；bridge 从 `/compute_path_to_pose` 识别显著转角，自动顺序发送“转角前预对齐 → 转角后退出 → 最终目标”。新点击会取消当前小段，丢弃旧路线并从当前位姿重规划。
+- 静态 launch 重新接入最终激光安全闸门：Nav2 的 `/cmd_vel` 经 `scan_safety_guard` 输出 `/cmd_vel_safe` 后才进入 Gazebo DiffDrive。保护逻辑已单元验证：近墙平移归零，纯原地转向保留。
+- 窄 L 型出口宽约 `0.44 m`；相对 Nav2 直径 `0.27 m`，理论居中余量约 `0.085 m/侧`。当前普通 DWB 在该苛刻几何中可能选择原地转向或被安全闸门停止。曾观察到 `/cmd_vel` 请求 `linear.x=0.35` 而 `/cmd_vel_safe` 输出零速度，说明安全层成功阻止物理挤墙。
+- **结论：** 静态安全导航基线完成；“无碰撞自主穿越该窄 L 型出口”尚未完成，必须记为安全拒绝/局部控制挑战，不能记为成功。动态障碍物阶段先在中央开阔区开展，不与窄通道变量叠加。
+- 验证：`predictive_nav_simulation` 与 `predictive_nav_bringup` 均已重新构建成功；安全闸门的近墙停平移、保留角速度行为测试通过。
 
 ### 2026-09-01 — 发布正式 Track ROS 接口
 

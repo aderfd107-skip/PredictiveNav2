@@ -1,16 +1,20 @@
 # 06：导出并加载插件
 
+> **本步目标：** 让 Nav2 能在运行时发现并加载空的 `DynamicRiskCritic`；此时仍不计算动态风险。
+>
+> **AI 会做什么：** 生成 plugin XML、导出宏、CMake 安装规则和 YAML 的最小改动，并解释类名、库名、XML 条目之间的对应关系。
+>
+> **你只需要做到：** 用构建与启动日志区分“代码编译通过”“动态库被安装”“运行时插件被加载”。
+
 编写 plugin XML 和 CMake 导出规则，再在 MPPI 参数中声明该 critic，让 Nav2 真正加载它。
 
 **导出**是把 C++ 类名告诉 pluginlib；代码编译成功不等于 Nav2 一定找得到它。
 
 完成标准：启动日志明确显示 DynamicRiskCritic 已加载，且加载失败时能定位 XML、库名或参数名。
 
-## 本步手写范围
+## 本步 AI 生成与审读
 
-**必须亲手写一遍：** plugin XML 的 class 条目、导出宏、MPPI YAML 中的 critic 名称。它们是插件能否被发现的三段链路。
-
-**需要理解，可参考：** CMake 的 `pluginlib_export_plugin_description_file(...)` 具体语法。不要猜库名，后面通过构建和日志验证。
+AI 生成 plugin XML、导出宏和 MPPI YAML 差分。你要检查具体类名、库名、XML 条目和 YAML critic 名称完全一致；它们是插件能否被发现的三段链路。CMake 的 `pluginlib_export_plugin_description_file(...)` 可由 AI 填写，但必须通过构建和日志验证。
 
 ## 需要的新增内容
 
@@ -28,7 +32,7 @@ PLUGINLIB_EXPORT_CLASS(
 
 ### 2. `predictive_nav_mppi_critics.xml`
 
-你先自己补全下面的 `???`：
+AI 会根据实际 CMake 库目标补全下面的 `path`；你要核对它不是源码文件名：
 
 ```xml
 <class_libraries>
@@ -65,3 +69,51 @@ XML 未安装      → install() / export 宏问题
 ```
 
 本步暂时不写风险公式。你要保留一次插件成功加载的完整 controller_server 日志，这是后续面试中很好的工程证据。
+
+## 生成与验证顺序：三段链必须逐段通
+
+插件发现不是一个动作，而是三段都正确：
+
+```text
+C++ 类 + EXPORT_CLASS
+        ↓
+XML：类名属于哪个动态库
+        ↓
+package.xml / CMake：把 XML 安装并注册到 ament index
+        ↓
+MPPI YAML：要求加载这个 Critic
+```
+
+AI 会补齐这两处构建声明；你需要逐字核对名称是否完全一致：
+
+```cmake
+# CMakeLists.txt，路径是 XML 文件相对于 package 根目录
+pluginlib_export_plugin_description_file(
+  nav2_mppi_controller predictive_nav_mppi_critics.xml)
+```
+
+```xml
+<!-- package.xml 的 <export> 内，由 AI 生成后审读 -->
+<nav2_mppi_controller plugin="${prefix}/predictive_nav_mppi_critics.xml" />
+```
+
+然后执行：
+
+```bash
+cd ~/PredictiveNav2
+source /opt/ros/jazzy/setup.bash
+colcon build --packages-select predictive_nav_mppi --symlink-install
+source install/setup.bash
+```
+
+### 如何确认不是“编译成功但没安装”
+
+```bash
+find install/predictive_nav_mppi -name '*dynamic_risk*' -o -name '*critics.xml'
+```
+
+应至少看到动态库和 XML。之后才允许把 `DynamicRiskCritic` 加入 MPPI YAML。第一次加载时它是空评分：若添加后机器人明显改变行为，先停下并检查配置，而不是继续第 07 节。
+
+## 让 AI 审查时提供的最小集合
+
+`CMakeLists.txt` 的库与 install 段、`package.xml` 的 export 段、XML、`PLUGINLIB_EXPORT_CLASS` 所在的几行，以及 controller_server 第一次加载日志。

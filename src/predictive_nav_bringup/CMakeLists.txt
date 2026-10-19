@@ -11,6 +11,8 @@ install(
 install(
   PROGRAMS
     scripts/publish_initial_pose.py
+    scripts/corner_alignment_executor.py
+    scripts/corner_alignment_goal_bridge.py
     scripts/dwb_evaluation_monitor.py
     scripts/narrow_passage_mission.py
   DESTINATION lib/${PROJECT_NAME}

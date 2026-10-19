@@ -35,15 +35,22 @@ class Waypoint:
 # cross_north_west x=-2.50.  With robot_radius=0.135 m, x=-2.72 is the
 # geometric centre line.  The points immediately before and after the slot
 # are kept away from the horizontal wall's y=[5.25, 5.37] footprint.
+#
+# Do not ask DWB to make the 90-degree heading change beside either convex
+# corner at (-2.50, 5.25)/(-2.50, 5.37).  A differential-drive robot cannot
+# translate sideways: it needs to turn while there is still clear space on
+# the approach side, then traverse the slot approximately straight.
 ROUTES = {
     "northbound_outlet": (
-        Waypoint("south approach", -1.80, 4.75, math.pi),
+        Waypoint("south approach", -1.80, 4.55, math.pi),
+        Waypoint("south pre-alignment", -2.72, 4.55, math.pi / 2.0),
         Waypoint("south slot alignment", -2.72, 4.95, math.pi / 2.0),
         Waypoint("north slot exit", -2.72, 5.58, math.pi / 2.0),
         Waypoint("north departure", -1.70, 5.65, 0.0),
     ),
     "southbound_outlet": (
-        Waypoint("north approach", -1.70, 5.65, math.pi),
+        Waypoint("north approach", -1.70, 6.07, math.pi),
+        Waypoint("north pre-alignment", -2.72, 6.07, -math.pi / 2.0),
         Waypoint("north slot alignment", -2.72, 5.58, -math.pi / 2.0),
         Waypoint("south slot exit", -2.72, 4.95, -math.pi / 2.0),
         Waypoint("south departure", -1.80, 4.75, 0.0),

@@ -380,7 +380,16 @@ Visualization Manager:
     Frame Rate: 30
   Name: root
   Tools:
-    - Class: nav2_rviz_plugins/GoalTool
+    # Use this 2D Goal Pose tool for normal navigation in this project.  It
+    # publishes to the bridge, which inserts safe corner pre-alignment stages
+    # before sending any NavigateToPose action to Nav2.
+    - Class: rviz_default_plugins/SetGoal
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /corner_alignment/goal
     - Class: rviz_default_plugins/Interact
       Hide Inactive Objects: true
   Transformation:
