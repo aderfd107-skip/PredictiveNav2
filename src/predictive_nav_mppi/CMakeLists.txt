@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.8)
 project(predictive_nav_mppi)
 
-# This package deliberately stops at a buildable shared-library skeleton.
-# DynamicRiskCritic and pluginlib registration are added in later chapter steps.
+# This package exports an empty DynamicRiskCritic. Dynamic-risk scoring is added
+# in later chapter steps, after plugin discovery/loading is verified.
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(nav2_mppi_controller REQUIRED)
@@ -37,6 +37,12 @@ install(TARGETS ${PROJECT_NAME}
 
 install(DIRECTORY include/
   DESTINATION include
+)
+
+# Register the XML in the ament resource index and install it beside the
+# package. Nav2's CriticManager discovers custom MPPI critics through this.
+pluginlib_export_plugin_description_file(
+  nav2_mppi_controller predictive_nav_mppi_critics.xml
 )
 
 ament_export_include_directories(include)

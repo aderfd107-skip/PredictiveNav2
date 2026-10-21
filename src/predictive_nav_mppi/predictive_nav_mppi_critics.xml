@@ -1,5 +1,14 @@
-<!--
-  Step 06 will define the pluginlib <library> and <class> entries here.
-  It remains intentionally uninstalled and unused during the package-skeleton
-  step, so this file cannot make Nav2 load an unfinished critic.
--->
+<?xml version="1.0"?>
+<class_libraries>
+  <library path="predictive_nav_mppi">
+    <class
+      name="mppi::critics::DynamicRiskCritic"
+      type="mppi::critics::DynamicRiskCritic"
+      base_class_type="mppi::critics::CriticFunction">
+      <description>
+        PredictiveNav2 MPPI critic. It is intentionally empty until the
+        prediction-cache and dynamic-risk scoring steps are implemented.
+      </description>
+    </class>
+  </library>
+</class_libraries>

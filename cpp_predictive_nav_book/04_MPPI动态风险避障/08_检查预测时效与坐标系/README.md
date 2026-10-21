@@ -1,93 +1,58 @@
 # 08：检查预测时效与坐标系
 
-> **本步目标：** 在风险评分前拒绝过期、frame 不一致或包含异常数值的 prediction；此时仍不计算距离。
->
-> **AI 会做什么：** 生成时效、frame 和数组合法性检查，以及过期阈值、拒绝日志和最小测试。
->
-> **你只需要做到：** 能解释为什么同一个数值在 `map` 与 `odom` 中不能直接相减，并演示一条过期或 frame 错误消息被安全忽略。
+> 本步目标：在评分前拒绝过期、坐标系错误或包含 NaN/Inf 的 prediction；不合格数据不能偷偷参与风险计算。
 
-在评分前检查 prediction 是否过期、frame 是否为 `odom`、点和协方差是否有限；不合格数据不能参与评分。
+## 为什么预测也会过期
 
-**时效**是“预测距现在多久”。动态环境里一份旧预测很可能已经指向错误位置。
-
-完成标准：停止 prediction 节点后，critic 明确报告过期并执行配置好的安全策略。
-
-## 本步 AI 生成与审读
-
-AI 会把“收到过消息”与“现在还能用这条消息”严格分开。你要读懂为什么旧 prediction 参与控制比没有 prediction 更危险，并通过停掉 prediction 节点验证安全退化。
-
-## 需要的头文件与成员
-
-```cpp
-#include <cmath>
-#include <string>
-
-#include "rclcpp/rclcpp.hpp"
-```
-
-```cpp
-bool is_prediction_usable(
-  const PredictionArray & message,
-  const rclcpp::Time & now,
-  std::string * reason) const;
-
-double max_prediction_age_s_{0.5};
-std::string expected_prediction_frame_{"odom"};
-```
-
-## 你要审读的检查顺序
+prediction 说的是“某个过去时刻对未来的判断”。若当前已过去很久，方块可能已转弯、停下
+或离开视野，继续把旧预测当真会制造错误风险。
 
 ```text
-1. header.frame_id 是否等于 odom
-2. header.stamp 是否为正、可转换为 ROS 时间
-3. now - stamp 是否在 [允许的轻微 future skew, max_prediction_age] 内
-4. trajectories / poses / time_offsets 数量是否匹配
-5. 每个位置、尺寸、confidence、协方差元素是否 finite
-6. time_offsets 是否严格递增且为正
+now - prediction.header.stamp > max_prediction_age_s
+                         ↓
+                    过期，拒绝评分
 ```
 
-`std::isfinite()` 用于拒绝 `NaN` 与 `Inf`。不要用 `value == NAN`；这是 C++ 常见错误。
+使用仿真时必须让相关节点使用 `use_sim_time: true`；否则 wall time 与 Gazebo `/clock` 混用，
+任何 age 判断都可能不可靠。
 
-## 安全策略边界
+## 为什么 frame 必须一致
 
-本步先把策略参数化为 `skip_dynamic_risk`：prediction 不可用时不使用旧缓存，同时节流告警。Critic 不能自己发布停车命令；后面会讨论“高 cost / fail flag / 外部安全层”的组合，不能在这里偷偷创建 `/cmd_vel` publisher。
+如果 robot 候选位置是 `odom=(1, 0)`，prediction 却是 `map=(1, 0)`，这两个数值看起来一样，
+却不代表地图中的同一点。坐标变换会随 AMCL 校正变化。
 
-## 你的自测题
+本项目要求 prediction 的 `header.frame_id` 为 `odom`，与局部比较约定一致。不符合时记录
+拒绝原因；不能只忽略 frame 字符串继续相减。
 
-- prediction_node 被 Ctrl+C 停掉后，为什么 `/clock` 继续走才会让 age 变大？
-- frame 是 `map` 但数值看着正常，为什么仍必须拒绝？
-- 空 trajectory array 与 prediction node 已死，为什么是两个不同状态？
+## 还需要检查哪些内容
 
-## 先读真实消息，再写校验函数
+| 检查 | 不通过时的做法 |
+|---|---|
+| 消息是否存在 | 跳过本周期动态风险 |
+| header stamp 是否合理 | 拒绝并节流警告 |
+| frame 是否为 `odom` | 拒绝该帧 |
+| trajectory / poses / offsets 长度是否一致 | 拒绝该轨迹 |
+| x、y、协方差是否 finite | 跳过异常轨迹 |
 
-本项目的 `PredictedTrajectoryArray` 有一个公共 `header` 和多个 `trajectories`；每条 trajectory 的 `time_offsets[i]` 与 `poses[i]` 成对，偏移相对于 array 的 `header.stamp`，坐标均在 `header.frame_id` 中。先自己执行：
+拒绝动态 prediction 并不等于关掉 Nav2。原版静态 costmap Critic、底盘速度约束和 scan safety
+guard 仍继续工作；这叫安全退化，不是“旧预测照用”。
 
-```bash
-ros2 interface show predictive_nav_msgs/msg/PredictedTrajectoryArray
-ros2 interface show predictive_nav_msgs/msg/PredictedTrajectory
-```
+## 如何验证
 
-然后将 `is_prediction_usable()` 拆成小判断，避免一个 100 行 `if`：
+依次测试：正常 prediction、停止 prediction_node、故意发布错误 frame 或异常数值的测试消息。
+观察 Critic 日志是否明确显示 accepted/rejected 原因。
 
-```text
-is_header_usable(message.header, now, reason)
-is_trajectory_shape_usable(trajectory, reason)
-is_finite_trajectory(trajectory, reason)
-```
+不要只看机器人是否移动：机器人能移动不代表旧 prediction 没有误参与评分。
 
-你可以先只实现公共 header 和数组长度检查，编译通过后再逐项补 `finite` 检查。每补一项就写一个可读的 reason，例如 `wrong_frame`、`stale`、`shape_mismatch`，不要只打印“invalid”。
+## 本步完成标准
 
-## 时间判断实现提示
+- [ ] 正常新鲜 `odom` prediction 可通过；
+- [ ] 过期 prediction 不参与 risk；
+- [ ] 非 `odom` frame 不参与 risk；
+- [ ] 单个异常目标不会让 controller_server 崩溃；
+- [ ] 日志能区分无数据、过期、frame 错误和数值错误。
 
-```text
-age = now - header.stamp
-age > max_prediction_age_s     → stale，拒绝
-age < -allowed_future_skew_s   → future_stamp，拒绝
-否则                           → 通过时间检查
-```
+## 下一步
 
-`use_sim_time:=true` 时必须用 ROS 时钟，而不是 `std::chrono` 的墙钟。否则 Gazebo 暂停、rosbag 回放或仿真时间重置时，age 会错误。
-
-## 本节的最小故障测试
-
-先不人为改坏消息定义。最简单的故障注入是停掉 `prediction_node`，等待超过 `max_prediction_age_s`，确认只出现节流 warning，MPPI 仍保留静态避障能力。把 warning 文本和你的降级选择写进笔记。
+[09_计算候选轨迹与障碍物距离](../09_计算候选轨迹与障碍物距离/README.md)：只有数据可信后，
+才开始遍历 MPPI 候选轨迹与 prediction。

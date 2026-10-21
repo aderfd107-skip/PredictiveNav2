@@ -1,47 +1,101 @@
 # 第四模块：让 Nav2 评估动态风险
 
-> **本章的 AI 协作原则：** AI 可以生成配置、包骨架、首版 critic 与诊断代码；你不需要从空文件逐行默写。
-> 但你必须能说清数据从哪里来、风险怎样影响 MPPI 候选轨迹、参数为什么这样取，并亲自完成构建、运行、观察、故障复现和小范围修改。
-> 本章不要求你从零手写 C++ 或 YAML。所有实现、配置和实验表均可由 AI 生成；你的学习任务是逐段审读、运行、观察，并能解释其输入、输出、安全边界和失败原因。若要修改行为，只需在 AI 协助下完成小范围改动并重新验证。
-
 ## 这块要解决什么
 
-前两模块告诉我们障碍物现在和未来可能在哪里；本模块才把这些信息交给 Nav2 的局部控制器，使机器人在选择下一小段动作时会考虑“我和障碍物会不会在同一时刻靠得太近”。
+第三模块已经能从 `/dynamic_obstacles/tracks` 产生带时间轴和协方差的
+`/dynamic_obstacles/predictions`。但预测目前只显示在 RViz，Nav2 不会因为它而
+改变机器人动作。
 
-**MPPI** 是 Nav2 的一种局部控制器：它会生成很多短时间的候选驾驶轨迹，给每条轨迹打分，选择代价较低的一条。本项目不会自己接管 `/cmd_vel`，而是新增一个 `DynamicRiskCritic` 给 MPPI 增加动态风险分。
+本章要新增一个 Nav2 MPPI Critic：它在 MPPI 给许多候选机器人轨迹评分时，额外判断
+“机器人和障碍物会不会在**同一未来时刻**靠得太近”。风险高的候选轨迹得到更高 cost，
+MPPI 自然更倾向减速、等待或选择另一条局部动作。
 
-## 目标数据流
+```text
+LiDAR → cluster → tracking → prediction
+                              ↓
+                    DynamicRiskCritic
+                              ↓  给 MPPI 候选轨迹加 risk cost
+global path → Nav2 MPPI → /cmd_vel → 底盘 / Gazebo
+```
+
+## 完成后的数据流
 
 ```text
 /dynamic_obstacles/predictions
-          ↓ 缓存最新有效预测
-DynamicRiskCritic（MPPI 插件）
-          ↓ 给每条候选轨迹增加风险代价
-Nav2 MPPI → /cmd_vel
+          ↓ 最新一帧缓存、时效和 frame 检查
+DynamicRiskCritic::score(CriticData)
+          ↓ 距离、时间对齐、TTC、协方差风险
+data.costs(i) += dynamic_risk_cost
+          ↓
+Nav2 MPPI 在原有静态障碍、路径跟随和速度约束之外作出选择
 ```
+
+这里的 Critic **不直接发布 `/cmd_vel`**。它只改变候选动作评分；真正的速度命令仍由
+Nav2 MPPI 输出，静态 costmap、运动学约束与已有 `scan_safety_guard` 仍保留。
+
+## 本章已经做了什么
+
+目前仓库已经有：
+
+1. `nav2_mppi_baseline.yaml`：差速底盘的原版 MPPI 基线；
+2. `predictive_nav_mppi`：可构建的共享库包；
+3. `DynamicRiskCritic` 空类：继承 Nav2 Critic 接口，但不修改任何 cost。
+
+因此目前能验证“MPPI 可运行”和“自定义 Critic 可编译”，还不能声称机器人已经根据
+预测做动态避障。第 06 步才让 Nav2 加载该类，第 07–11 步才逐步添加预测与风险逻辑。
+
+## 你通过这一章会学到什么
+
+### 1. 全局规划、局部规划与底盘控制的边界
+
+全局规划给总体方向；MPPI 选择短时动作；底盘执行 `/cmd_vel`。动态风险 Critic 位于
+MPPI 内部，只提供评分。
+
+### 2. MPPI 为什么适合接入预测
+
+MPPI 会前向模拟未来短轨迹，prediction 也给出未来障碍物位置。两者以相同时间点
+对齐后，能区分“位置相同但经过时间不同”与“未来同一时刻相遇”。
+
+### 3. ROS 2 / Nav2 插件工程
+
+你会见到 C++ 共享库、继承、虚函数、pluginlib XML、CMake 安装规则，以及运行时加载
+失败时如何定位问题。
+
+### 4. 诚实的动态避障实验
+
+最终在相同地图、起终点、actor 路线和速度下，对比原版 MPPI 与动态风险版的最小距离、
+到达率、耗时、停顿和控制周期耗时。
+
+## 可以怎样向面试官介绍这一章
+
+> 我将 LiDAR 跟踪和短时预测结果接入 Nav2 MPPI 的 Critic 评分接口，而不是绕开 Nav2
+> 自己发布速度。对于每条候选机器人轨迹，系统按时间对齐比较其与动态障碍物预测轨迹
+> 的距离，并把 TTC 和预测协方差转成额外风险代价。预测无效、过期或 frame 不一致时，
+> Critic 会拒绝该数据并保留原有静态安全层；最后使用原版 MPPI 作为 baseline 量化收益。
+
+## 当前完成边界与下一步
+
+当前处于“空 Critic 已编译、尚未由 Nav2 加载”的阶段。下一步是第 06 节：补齐
+pluginlib 导出和 YAML 配置，先加载空 Critic，再开始订阅 prediction。
+
+## 本章验收清单
+
+- [ ] 原版 MPPI 可完成导航；
+- [ ] `DynamicRiskCritic` 被 controller_server 成功加载；
+- [ ] Critic 只读取新鲜、坐标系正确、数值有限的 prediction；
+- [ ] 同一时刻接近的候选轨迹获得更高动态风险 cost；
+- [ ] 动态场景中出现可解释的减速、等待或绕行；
+- [ ] 与原版 MPPI 的对照包含收益、失败样本和代价。
 
 ## 步骤路线
 
-1. [00_这一模块要做什么](00_这一模块要做什么/README.md)
-2. [01_理解MPPI和本项目接入点](01_理解MPPI和本项目接入点/README.md)
-3. [02_建立原版MPPI基线](02_建立原版MPPI基线/README.md)
-4. [03_观察MPPI候选轨迹和调试信息](03_观察MPPI候选轨迹和调试信息/README.md)
-5. [04_创建mppi插件包骨架](04_创建mppi插件包骨架/README.md)
-6. [05_定义DynamicRiskCritic插件](05_定义DynamicRiskCritic插件/README.md)
-7. [06_导出并加载插件](06_导出并加载插件/README.md)
-8. [07_缓存预测障碍物](07_缓存预测障碍物/README.md)
-9. [08_检查预测时效与坐标系](08_检查预测时效与坐标系/README.md)
-10. [09_计算候选轨迹与障碍物距离](09_计算候选轨迹与障碍物距离/README.md)
-11. [10_加入时间对齐与TTC风险](10_加入时间对齐与TTC风险/README.md)
-12. [11_写入动态风险评分](11_写入动态风险评分/README.md)
-13. [12_配置参数与权重](12_配置参数与权重/README.md)
-14. [13_在仿真中启用critic](13_在仿真中启用critic/README.md)
-15. [14_观察减速等待绕行](14_观察减速等待绕行/README.md)
-16. [15_排错与安全边界](15_排错与安全边界/README.md)
-17. [16_对比原版MPPI基线](16_对比原版MPPI基线/README.md)
+`00–03` 建立并观察原版 MPPI；`04–06` 创建、定义和加载空 Critic；
+`07–11` 接收 prediction 并计算风险；`12–14` 配置、运行和观察行为；
+`15–16` 排错并完成对照实验。
 
 ## 先记住的边界
 
-- MPPI 原有的静态碰撞检查继续保留；动态 critic 是额外风险，不替代安全层。
-- critic 只打分，不直接向机器人发布速度命令。
-- 若预测过期或无效，必须显式诊断并按参数采用保守策略，绝不能悄悄使用旧数据。
+- DynamicRiskCritic 是研究型连续风险评分，不是认证急停系统；
+- 预测不是 Gazebo 真值，预测越不确定越应保守；
+- Critic 可以累加自己的 cost，不能覆盖其他 Critic 的 cost；
+- “车不走”时，先在原版 MPPI baseline 中复现或排除问题。

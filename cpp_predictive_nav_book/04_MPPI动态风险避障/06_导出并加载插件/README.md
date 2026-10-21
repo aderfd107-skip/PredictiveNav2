@@ -1,119 +1,97 @@
 # 06：导出并加载插件
 
-> **本步目标：** 让 Nav2 能在运行时发现并加载空的 `DynamicRiskCritic`；此时仍不计算动态风险。
->
-> **AI 会做什么：** 生成 plugin XML、导出宏、CMake 安装规则和 YAML 的最小改动，并解释类名、库名、XML 条目之间的对应关系。
->
-> **你只需要做到：** 用构建与启动日志区分“代码编译通过”“动态库被安装”“运行时插件被加载”。
+> 本步目标：让 controller_server 在运行时找到并实例化空的 DynamicRiskCritic；仍不加入任何动态风险公式。
 
-编写 plugin XML 和 CMake 导出规则，再在 MPPI 参数中声明该 critic，让 Nav2 真正加载它。
+## “编译成功”为什么还不够
 
-**导出**是把 C++ 类名告诉 pluginlib；代码编译成功不等于 Nav2 一定找得到它。
+C++ 已能生成 `libpredictive_nav_mppi.so`，但 Nav2 仍不知道其中哪个类可作为 Critic。
+pluginlib 需要三段信息：
 
-完成标准：启动日志明确显示 DynamicRiskCritic 已加载，且加载失败时能定位 XML、库名或参数名。
-
-## 本步 AI 生成与审读
-
-AI 生成 plugin XML、导出宏和 MPPI YAML 差分。你要检查具体类名、库名、XML 条目和 YAML critic 名称完全一致；它们是插件能否被发现的三段链路。CMake 的 `pluginlib_export_plugin_description_file(...)` 可由 AI 填写，但必须通过构建和日志验证。
-
-## 需要的新增内容
-
-### 1. cpp 文件末尾的导出宏
-
-```cpp
-#include "pluginlib/class_list_macros.hpp"
-
-PLUGINLIB_EXPORT_CLASS(
-  predictive_nav_mppi::DynamicRiskCritic,
-  mppi::critics::CriticFunction)
+```text
+DynamicRiskCritic C++ 类
+        ↓ EXPORT_CLASS
+库中导出的具体类型
+        ↓ XML
+该类型属于哪个动态库、继承哪个基类
+        ↓ CMake / package.xml 安装与注册
+ament index 能找到 XML
+        ↓ MPPI YAML
+controller_server 请求加载该 Critic
 ```
 
-这里第一个名字是你的具体类，第二个名字是 Nav2 通过 pluginlib 查找的基类；两者任何一个 namespace 写错，库即使编译成功也无法加载。
+任何一段缺失，都可能出现“编译成功但运行时找不到类”。
 
-### 2. `predictive_nav_mppi_critics.xml`
+## XML 应表达什么
 
-AI 会根据实际 CMake 库目标补全下面的 `path`；你要核对它不是源码文件名：
+`predictive_nav_mppi_critics.xml` 现在包含一个库和一个类。逻辑上等价于：
 
 ```xml
-<class_libraries>
-  <library path="???">
-    <class
-      type="predictive_nav_mppi::DynamicRiskCritic"
-      base_class_type="mppi::critics::CriticFunction">
-      <description>Scores time-aligned dynamic obstacle risk.</description>
-    </class>
-  </library>
-</class_libraries>
+<library path="predictive_nav_mppi">
+  <class
+    name="mppi::critics::DynamicRiskCritic"
+    type="mppi::critics::DynamicRiskCritic"
+    base_class_type="mppi::critics::CriticFunction" />
+</library>
 ```
 
-`path` 对应 CMake 生成并安装的库名，不是源码文件名，也通常不写 `lib` 前缀或 `.so` 后缀。
+`type` 必须与 C++ namespace 和类名完全一致；`base_class_type` 必须是 Nav2 要加载的基类。
+Jazzy 的 `CriticManager` 会把 YAML 中的 `DynamicRiskCritic` 自动扩展成
+`mppi::critics::DynamicRiskCritic`，因此这个插件的**C++ namespace 必须使用
+`mppi::critics`**。这不是包名：ROS 包、动态库和源码目录仍然是
+`predictive_nav_mppi`。
 
-### 3. MPPI YAML
+## YAML 怎样加入空 Critic
 
-在专用 MPPI 配置中把插件别名加入 critic 列表，并创建同名参数空间：
+不要修改 baseline。已创建 `nav2_mppi_dynamic_risk.yaml`，在 `FollowPath.critics` 最后加入：
 
 ```yaml
-FollowPath:
-  critics: ["...", "DynamicRiskCritic"]
-  DynamicRiskCritic:
-    enabled: true
+critics: [..., "DynamicRiskCritic"]
+
+DynamicRiskCritic:
+  enabled: true
 ```
 
-## 排错顺序
+空 Critic 加载成功后，导航行为应和 baseline 基本一致；它只有日志，不增加 cost。
 
-```text
-库未生成       → CMake target / 依赖问题
-XML 未安装      → install() / export 宏问题
-找不到类        → XML type、namespace、导出宏问题
-类能加载但无日志 → YAML critic 名称或 namespace 问题
-```
-
-本步暂时不写风险公式。你要保留一次插件成功加载的完整 controller_server 日志，这是后续面试中很好的工程证据。
-
-## 生成与验证顺序：三段链必须逐段通
-
-插件发现不是一个动作，而是三段都正确：
-
-```text
-C++ 类 + EXPORT_CLASS
-        ↓
-XML：类名属于哪个动态库
-        ↓
-package.xml / CMake：把 XML 安装并注册到 ament index
-        ↓
-MPPI YAML：要求加载这个 Critic
-```
-
-AI 会补齐这两处构建声明；你需要逐字核对名称是否完全一致：
-
-```cmake
-# CMakeLists.txt，路径是 XML 文件相对于 package 根目录
-pluginlib_export_plugin_description_file(
-  nav2_mppi_controller predictive_nav_mppi_critics.xml)
-```
-
-```xml
-<!-- package.xml 的 <export> 内，由 AI 生成后审读 -->
-<nav2_mppi_controller plugin="${prefix}/predictive_nav_mppi_critics.xml" />
-```
-
-然后执行：
+## 如何验证
 
 ```bash
 cd ~/PredictiveNav2
 source /opt/ros/jazzy/setup.bash
-colcon build --packages-select predictive_nav_mppi --symlink-install
 source install/setup.bash
+colcon build --packages-select predictive_nav_mppi predictive_nav_bringup --symlink-install
+
+ros2 launch predictive_nav_bringup predictive_dynamic_lab_mppi.launch.py \
+  params_file:=$(ros2 pkg prefix predictive_nav_bringup)/share/predictive_nav_bringup/config/nav2_mppi_dynamic_risk.yaml
 ```
 
-### 如何确认不是“编译成功但没安装”
+启动动态风险配置后，在 controller_server 日志中查找：
 
-```bash
-find install/predictive_nav_mppi -name '*dynamic_risk*' -o -name '*critics.xml'
+```text
+Initialized DynamicRiskCritic as an empty MPPI critic
 ```
 
-应至少看到动态库和 XML。之后才允许把 `DynamicRiskCritic` 加入 MPPI YAML。第一次加载时它是空评分：若添加后机器人明显改变行为，先停下并检查配置，而不是继续第 07 节。
+若没有该日志，不能直接进入 prediction 步骤。先检查 XML、导出宏、安装规则、YAML 中的
+Critic 名称，以及 launch 是否真的加载了动态版本 YAML。
 
-## 让 AI 审查时提供的最小集合
+## 常见问题
 
-`CMakeLists.txt` 的库与 install 段、`package.xml` 的 export 段、XML、`PLUGINLIB_EXPORT_CLASS` 所在的几行，以及 controller_server 第一次加载日志。
+### `Class ... does not exist`
+
+通常是 XML 的 `type`、`PLUGINLIB_EXPORT_CLASS` 或 namespace 不一致。
+
+### 没有报错，但没有初始化日志
+
+通常是该 Critic 没有写入 `FollowPath.critics`，或 launch 仍使用 baseline YAML。
+
+## 本步完成标准
+
+- [x] XML、导出宏、CMake、package.xml 和 YAML 名称一致；
+- [x] controller_server 日志确认空 Critic 已加载；
+- [ ] 加载空 Critic 前后导航行为相同；
+- [ ] baseline YAML 仍可以独立启动。
+
+## 下一步
+
+[07_缓存预测障碍物](../07_缓存预测障碍物/README.md)：插件已经能运行，下一步才订阅
+`/dynamic_obstacles/predictions`。

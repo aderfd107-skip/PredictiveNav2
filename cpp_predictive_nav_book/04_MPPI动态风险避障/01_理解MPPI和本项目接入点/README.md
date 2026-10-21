@@ -1,78 +1,71 @@
 # 01：理解 MPPI 和本项目接入点
 
-> **本步目标：** 理解全局规划、MPPI、`DynamicRiskCritic` 与底盘控制的位置关系；本步不修改代码。
->
-> **AI 会做什么：** 根据本仓库画出架构图，并把每个 ROS topic、输入和输出标出来。
->
-> **你只需要做到：** 能回答“为什么 critic 只评分、不直接发布 `/cmd_vel`”，以及“动态预测为何不能直接替代局部控制器”。
+> 本步目标：区分全局规划、局部 MPPI、DynamicRiskCritic 与底盘控制的职责；本步不修改代码。
 
-先用项目现有导航链路解释 MPPI 的位置：全局规划给方向，MPPI 在局部不断挑选短时间驾驶轨迹。
-
-**critic（评价器）**是 MPPI 的一个可插拔评分规则。本项目只新增动态风险这一条规则，不重写 Nav2 控制器。
-
-完成标准：能画出 `/predictions → critic → MPPI → /cmd_vel`，并知道 critic 不应直接控制小车。
-
-## 本步是否写代码
-
-不写 C++。这是后续所有代码的设计前提；如果此处职责混乱，后面即使插件能编译，也会把控制链路接错。
-
-## AI 生成的架构图，你要读懂什么
-
-让 AI 根据下面的接口生成两张架构图：
-
-1. 从 RViz 发送目标到 Gazebo 底盘执行的完整链路；
-2. `prediction_node`、`DynamicRiskCritic`、MPPI、`/cmd_vel` 的输入输出图。
-
-读图后，你应能回答：
-
-- 为什么 Critic 不能自己再创建一个 `/cmd_vel` publisher？
-- 若动态预测话题停了，谁应该决定局部速度？
-- `map`、`odom`、`base_footprint` 分别在这条链中承担什么角色？
-
-## 本步必须说清的接口
+## 一条目标指令经过哪些模块
 
 ```text
-/dynamic_obstacles/predictions  →  DynamicRiskCritic 的订阅缓存
-Nav2 global path                →  MPPI 的路径相关 Critic
-MPPI candidate trajectories     →  DynamicRiskCritic::score(...)
-MPPI                             →  /cmd_vel
+RViz Goal
+  ↓
+BT Navigator：管理 NavigateToPose 任务和 recovery
+  ↓
+planner_server：在全局地图上生成 Global Path
+  ↓
+controller_server / MPPI：不断选择下一小段速度
+  ↓
+/cmd_vel → scan_safety_guard → Gazebo DiffDrive / 真机底盘
 ```
 
-`DynamicRiskCritic` 只向 MPPI 的候选 cost 数组加非负分数；它不规划全局路径、不修改 prediction、不直接控制电机。
+全局路径只说明总体应走哪边，不会精确规定每个控制周期的线速度和角速度。遇到障碍、
+转角或定位误差时，局部控制器必须重新决定眼前动作。
 
-## 自检
+## DWB 与 MPPI 都在哪里
 
-能在不看 README 的情况下用 60 秒解释：全局规划、局部 MPPI、Critic 与底盘控制四者的边界，就可以进入第 02 步。
-
-## 用文字核对架构图
-
-让 AI 按下面模板补全箭头两侧的“输入 / 输出”。这张图以后会成为你面试时解释项目的底稿。
+DWB 和 MPPI 都是 Nav2 的局部控制器。DWB 采样速度命令并用 Critic 打分；MPPI 采样短时
+控制序列，前向模拟出候选轨迹后评分。
 
 ```text
-RViz 目标点
-  → BT Navigator
-  → planner_server（Navfn / A*）
-  → __________________________
-  → controller_server（MPPI）
-  → __________________________
-  → scan_safety_guard
-  → Gazebo DiffDrive / 真机底盘
+global path
+    ↓
+controller_server
+    ├── DWBController       旧基线
+    └── MPPIController      当前第 04 章基线
 ```
 
-再单独画出动态数据支路：
+它们都不是全局规划器，也不是底盘驱动器。把 DWB 换成 MPPI 后，机器人仍是差速底盘；
+变化的是选择下一条局部速度的方法。
+
+## Critic 位于 MPPI 的哪里
 
 ```text
-prediction_node --发布--> /dynamic_obstacles/predictions
-                                      ↓
-                         DynamicRiskCritic 的 __________
-                                      ↓
-                  MPPI 的一批候选轨迹 + 每条轨迹的 ______
-                                      ↓
-                               MPPI 选择 /cmd_vel
+候选轨迹 i
+  ├── ConstraintCritic：速度、加速度是否可行
+  ├── CostCritic：是否靠近静态 costmap 障碍
+  ├── Path / Goal Critic：是否向路径和目标推进
+  └── DynamicRiskCritic：未来是否会靠近预测障碍物
 ```
 
-读完后，用自己的话分别回答：全局规划为何不发布轮速；Critic 为何只改 cost；底盘为什么不该知道 prediction topic。答案不要求术语完美，但三层输入输出不能混淆。
+每个 Critic 都只对 `data.costs(i)` 增加分数。MPPI 再将总分较好的候选变成当前 `/cmd_vel`。
 
-## 本节完成标准
+## 三个坐标系为什么会出现
 
-AI 生成两张图后，你能用不超过 120 字解释 DWB 与 MPPI 都位于哪一层即可。此节没有任何 C++ 文件要创建。
+| 坐标系 | 用途 |
+|---|---|
+| `map` | AMCL 定位与全局路径，长期固定的地图坐标 |
+| `odom` | 局部连续运动坐标，tracking/prediction 使用它 |
+| `base_footprint` | 机器人车体中心坐标 |
+
+prediction 与 MPPI 局部轨迹要在同一坐标系下才可相减。后续以 `odom` 作为预测比较坐标系；
+不能把 `map` 数字直接与 `odom` 数字相减。
+
+## 本步完成标准
+
+- 能说明 global path 与 `/cmd_vel` 之间还有 controller_server；
+- 能说明 DWB、MPPI 都是局部规划/控制方法；
+- 能说明 Critic 评分但不直接发布速度；
+- 能说明为什么预测坐标系必须与候选轨迹坐标系一致。
+
+## 下一步
+
+[02_建立原版MPPI基线](../02_建立原版MPPI基线/README.md)：先运行没有动态风险的原版 MPPI，
+保存之后比较必须使用的对照组。
