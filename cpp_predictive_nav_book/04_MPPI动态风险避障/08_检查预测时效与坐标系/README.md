@@ -37,20 +37,79 @@ now - prediction.header.stamp > max_prediction_age_s
 拒绝动态 prediction 并不等于关掉 Nav2。原版静态 costmap Critic、底盘速度约束和 scan safety
 guard 仍继续工作；这叫安全退化，不是“旧预测照用”。
 
+## 本工程的实现
+
+第 07 步的 callback 仍然只做两件事：收到消息后替换 `latest_prediction_`，并输出收到日志。
+它不在 callback 内决定消息能否参与控制，因为“是否过期”取决于 **当前** MPPI 控制周期的
+ROS 时间。
+
+本步由 `score()` 在拿到 snapshot 后依次执行：
+
+```text
+没有缓存
+  → 跳过动态部分
+
+有缓存
+  → header.frame_id 是否为 expected_prediction_frame（当前 odom）
+  → header.stamp 是否为正、未过期、未异常地来自未来
+  → 每条 trajectory 的 poses / time_offsets 长度是否一致
+  → 每个 offset 是否递增且合法
+  → pose 的 x、y 与 2D 协方差是否都是有限数
+  → 本步只记录“可用/拒绝”，仍不修改 data.costs
+```
+
+动态 MPPI 配置中的参数为：
+
+```yaml
+DynamicRiskCritic:
+  prediction_topic: "/dynamic_obstacles/predictions"
+  expected_prediction_frame: "odom"
+  max_prediction_age_s: 0.50
+  max_future_time_skew_s: 0.10
+```
+
+`max_prediction_age_s: 0.50` 不是“预测未来 0.5 秒”，而是允许消息距当前 ROS 时间最多
+0.5 秒。`max_future_time_skew_s: 0.10` 则容忍很小的时钟调度差，但拒绝明显晚于当前 `/clock`
+的时间戳。
+
+这里仍保留第 07 步的短临界区：mutex 只保护 shared pointer 的替换和复制；逐条检查在锁外
+完成。这样未来的距离/TTC 风险循环不会阻塞 prediction callback。
+
 ## 如何验证
 
-依次测试：正常 prediction、停止 prediction_node、故意发布错误 frame 或异常数值的测试消息。
-观察 Critic 日志是否明确显示 accepted/rejected 原因。
+先使用第 07 步的多终端启动方式，启动 MPPI、perception、tracking 和 prediction。然后看
+`controller_server` 的终端：
+
+正常新鲜的 `odom` 消息会输出类似：
+
+```text
+DynamicRiskCritic accepted prediction frame: ... usable trajectory(s), age=0.0xx s; scoring remains unchanged
+```
+
+若停止 `prediction_node`，等待超过 0.5 秒后，最新缓存会输出：
+
+```text
+DynamicRiskCritic rejected cached prediction frame | reason=timestamp is older than max_prediction_age_s
+```
+
+这说明 Critic **不会**继续把旧 prediction 当作当前动态障碍物；但 Nav2 仍会按原生静态
+Critics 工作。
+
+错误 frame 和异常数值的注入测试将在下一轮专门构造测试 publisher 时完成；本步代码已经会
+分别输出 `frame does not match expected_prediction_frame`、`pose and time_offsets sizes differ`、
+`pose x/y or 2D position covariance is non-finite` 等原因。
 
 不要只看机器人是否移动：机器人能移动不代表旧 prediction 没有误参与评分。
 
 ## 本步完成标准
 
-- [ ] 正常新鲜 `odom` prediction 可通过；
-- [ ] 过期 prediction 不参与 risk；
-- [ ] 非 `odom` frame 不参与 risk；
-- [ ] 单个异常目标不会让 controller_server 崩溃；
-- [ ] 日志能区分无数据、过期、frame 错误和数值错误。
+- [x] 为 Critic 加入可参数化的 `odom`、时效和未来时间偏差检查；
+- [x] 为每条轨迹加入长度、时间 offset、x/y 和二维协方差有限性检查；
+- [x] 不合格 frame 返回前不修改 `data.costs`，正常数据在本步也仍不修改它；
+- [x] `predictive_nav_mppi` 与 `predictive_nav_bringup` 已构建通过；
+- [ ] 在运行仿真中看到正常新鲜 `odom` prediction 的 accepted 日志；
+- [ ] 停止 prediction_node 后看到 stale rejection 日志；
+- [ ] 用测试消息完成错误 frame 和 NaN/Inf 的运行期注入验证。
 
 ## 下一步
 

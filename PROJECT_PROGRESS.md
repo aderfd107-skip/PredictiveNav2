@@ -1,6 +1,6 @@
 # PredictiveNav2 项目进度
 
-> **最后更新：2026-10-12**
+> **最后更新：2026-10-22**
 >
 > 本文件记录项目“实际已经完成并验证的内容”，不把设计目标当作既有功能。后续每次对项目做实质修改时，应同步更新“当前状态”和“变更记录”。完整技术设计见 [PROJECT_SPEC.md](PROJECT_SPEC.md)。
 
@@ -29,7 +29,7 @@ PredictiveNav2 最终要实现：机器人用 2D LiDAR 发现并跟踪动态障�
 | 多目标跟踪与 CV 卡尔曼滤波 | 已完成 baseline | `tracking_node` 已实现 CV predict、距离 gate 内贪心一对一关联、Kalman update、递增稳定 ID、新生与丢失删除，发布 `/dynamic_obstacles/tracks` 与调试 Marker；尚未实现 Hungarian/Mahalanobis、Track 确认机制或动态性分类。 |
 | 轨迹预测 | 已完成 baseline | `prediction_node` 基于已接受 Track 发布 `/dynamic_obstacles/predictions`：2 秒预测窗、`0.2 s` 间隔、CV 预测与二维位置协方差；对过期、低置信度和连续丢失 Track 进行拒绝。 |
 | 原版 Nav2 MPPI baseline | 已完成首轮动态运行记录 | 独立 MPPI YAML 已用于真值地图；Run 01 录制了动态方块、LiDAR、局部 costmap、里程计与速度命令。结论及数据边界见 `docs/experiments/04_02_original_mppi_dynamic_run_01.md`；尚未形成多次统计 benchmark。 |
-| DynamicRiskCritic | 未开始 | 尚未实现自定义 MPPI critic。 |
+| DynamicRiskCritic | 进行中：插件加载与预测缓存完成 | 自定义 Critic 已由 MPPI 加载，订阅并以 mutex + `ConstSharedPtr` 快照缓存 `/dynamic_obstacles/predictions`；尚未进行输入有效性检查、时间对齐或动态风险成本累加。 |
 | Benchmark / 数据导出 | 已有 rosbag 回放与排错基础，自动化指标未完成 | 还没有正式的多场景成功率、最小间距和耗时统计。 |
 
 当前静态阶段的结论、边界和面试表达见
@@ -50,6 +50,14 @@ ros2 launch predictive_nav_bringup nav_baseline.launch.py
 已完成一次端到端 smoke test：向 `/navigate_to_pose` 发送 `(5.8, -2.5)`，机器人从约 `(5.76, -3.80)` 行驶至约 `(5.81, -2.69)`，动作结果为 `SUCCEEDED`，恢复次数为 0。
 
 ## 变更记录
+
+### 2026-10-22 — DynamicRiskCritic 插件与预测缓存接入
+
+- 新建 `predictive_nav_mppi` 的 `mppi::critics::DynamicRiskCritic`：通过插件 XML、`PLUGINLIB_EXPORT_CLASS`、CMake 导出和动态 MPPI YAML 成功由 Nav2 MPPI 加载。
+- Critic 参数化订阅 `/dynamic_obstacles/predictions`；callback 缓存最新 `PredictedTrajectoryArray::ConstSharedPtr`，`score()` 通过短临界区 snapshot 读取。mutex 只保护 shared pointer 本身，避免未来风险循环长时间阻塞消息 callback。
+- Critic 现会在每次 `score()` 中按 ROS 时间拒绝 frame 不为 `odom`、零/异常时间戳、超过 `max_prediction_age_s`、明显未来时间戳，以及轨迹长度、offset、x/y 或二维协方差不合法的预测；拒绝时只跳过动态部分，绝不复用旧 prediction 或修改 `data.costs`。
+- **当前边界：** 尚未作候选轨迹与障碍物的时间对齐、距离/TTC/协方差风险计算，也尚未向 `data.costs` 累加动态风险；不能表述为已实现预测动态避障。
+- 验证：`colcon build --packages-select predictive_nav_mppi predictive_nav_bringup --symlink-install` 成功；动态 YAML 启动日志确认 `DynamicRiskCritic` 被加载。正常、过期、错误 frame 与异常数值的运行期验证仍待完成。
 
 ### 2026-09-21 — 静态安全导航检查点与窄通道结论
 

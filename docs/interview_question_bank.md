@@ -1,6 +1,6 @@
 # PredictiveNav2：面试复盘题库与项目表达边界
 
-> 最后整理：2026-08-28。本文从项目开发过程中的真实疑问提炼而来，用于面试复习，不是让你背标准答案。
+> 最后整理：2026-10-22。本文从项目开发过程中的真实疑问提炼而来，用于面试复习，不是让你背标准答案。
 >
 > **使用方法：** 每道题先用自己的话回答，再打开对应代码、日志或实验材料核对。回答时只说已完成且能复现的内容；写有“待完成”的问题，只能说明设计计划，不能说成既有能力。
 
@@ -8,9 +8,9 @@
 
 截至本文更新：
 
-- 已完成并验证：`/scan` 过滤、时间戳 TF 到 `odom`、顺序欧氏聚类、`/dynamic_obstacles/clusters`、RViz cluster Marker；AMCL + DWB 静态导航基线。
-- 跟踪已构建并待运行验证：时间戳 `dt` 检查、CV predict、距离 gate 内的贪心一对一关联、Kalman update，以及真实 `tracks_` 的递增 ID、新生和丢失删除；已定义并发布 `/dynamic_obstacles/tracks`。仍没有 tentative/confirmed、Hungarian/Mahalanobis 或正式 benchmark。
-- 待完成：tracks 消息发布、轨迹预测消息、原版 MPPI 基线、`DynamicRiskCritic`、benchmark、真机验证。
+- 已完成并验证：`/scan` 过滤、时间戳 TF 到 `odom`、顺序欧氏聚类、`/dynamic_obstacles/clusters`、RViz cluster Marker；AMCL + DWB 静态导航基线；原版 MPPI 基线与预测 topic。
+- 跟踪和预测已完成 baseline：CV predict、距离 gate 内贪心一对一关联、Kalman update、递增 ID、新生/丢失删除，发布 `/dynamic_obstacles/tracks` 与 `/dynamic_obstacles/predictions`。仍没有 tentative/confirmed、Hungarian/Mahalanobis 或正式 benchmark。
+- `DynamicRiskCritic` 已完成插件加载和预测消息缓存；尚未做 frame/时效校验、时间对齐或将动态风险累加到 `data.costs`。benchmark 和真机验证待完成。
 
 面试时可以说“我正在按该路线实现”，但不能把待完成部分说成现有成果。
 
@@ -188,21 +188,39 @@
 
 **回答核心：** Track 表示目标当前的滤波状态与不确定性；预测是把该状态推到多个未来时间点。未来轨迹必须带时间偏移和不确定性，供机器人候选轨迹在“同一时刻”比较风险。
 
-**当前状态：** 这是第 03 模块计划，尚未实现正式 prediction topic。
+**当前状态：** 已完成 baseline：`prediction_node` 向 `/dynamic_obstacles/predictions` 发布 2 秒、0.2 秒间隔的 CV 预测及二维位置协方差。预测质量和不同动态场景下的误差仍需 benchmark。
 
 ### Q17：为什么风险评估必须做时间对齐？
 
 **回答核心：** 不能拿机器人现在的位置与障碍物 1 秒后的预测位置直接比较。应比较机器人候选轨迹在 `t=0.6 s` 的位置，和障碍物也在 `t=0.6 s` 的预测位置；否则距离没有物理意义。
 
-**当前状态：** 属于第 04 模块计划，尚未实现。
+**当前状态：** DynamicRiskCritic 已接入预测消息，但尚未实现时间对齐与风险评分；不能把“收到预测”说成“已按未来同一时刻避障”。
 
 ### Q18：DynamicRiskCritic 和直接发布 `/cmd_vel` 有何区别？
 
-**回答核心：** critic 不直接控制机器人；它只给 MPPI 的每条候选轨迹增加动态风险 cost。MPPI 与其他 critic 综合评分后仍由 Nav2 输出控制命令。这样不会绕开原有静态碰撞检查和控制器约束。
+**回答核心：** critic 不直接控制机器人；它只给 MPPI 的每条候选轨迹增加动态风险 cost。MPPI 与其他 critic 综合评分后仍由 Nav2 输出控制命令。真正实现时必须使用 `data.costs(i) += risk` 累加，不能用赋值覆盖静态障碍、路径跟随和目标距离等原生成本。这样不会绕开原有静态碰撞检查和控制器约束。
+
+**当前状态：** 当前 Critic 尚未写入 risk，只完成插件加载和 prediction cache。
+
+### Q18-A：你的 DynamicRiskCritic 怎样被 Nav2 找到并加载？
+
+**回答核心：** 它不是普通类的直接构造，而是 pluginlib 运行时加载。YAML 的 `critics` 列表交给 Nav2 `CriticManager`；plugin XML 描述 shared library、C++ 类型和基类；`PLUGINLIB_EXPORT_CLASS` 则在动态库中导出该类。三者一致后，Nav2 才能通过 `CriticFunction` 接口实例化并调用它。
+
+**关键辨析：** ROS 包/动态库名为 `predictive_nav_mppi`，插件 C++ 类型为 `mppi::critics::DynamicRiskCritic`，两者不是同一个概念。Jazzy 的 MPPI 按该类型命名空间查找 Critic。
+
+### Q18-B：为什么 Critic 要用 mutex 和 snapshot 缓存预测？
+
+**回答核心：** prediction callback 异步写最新预测，而 MPPI 的 `score()` 在控制循环中读它，两者可能并发访问同一个 `shared_ptr`，不加同步会产生 data race。实现用 mutex 只保护 shared_ptr 的读写：`score()` 锁内复制一个 `ConstSharedPtr` 快照后立即解锁，随后在锁外进行重的风险循环。
+
+**取舍：** 本地快照持有该消息的共享所有权，因此 callback 即使已经换成下一帧，本轮评分仍可安全使用旧帧；又避免“候选轨迹 × 时间步 × 障碍物”的计算长期阻塞新预测到达。
+
+### Q18-C：`shared_ptr`、`weak_ptr` 和 RAII 在这个模块中怎样体现？
+
+**回答核心：** `latest_prediction_` 是 `ConstSharedPtr`，表示 Critic 共享持有只读预测消息，因此 callback 返回后消息仍能存活到本轮评分结束。基类的 lifecycle node 是非拥有型观察关系，使用前通过 `parent_.lock()` 临时取得有效的 `shared_ptr`，避免 Critic 决定 Node 生命周期。`std::scoped_lock` 采用 RAII，在离开作用域时自动释放 mutex，避免早退或异常后遗留锁。
 
 ### Q19：DWB 与 MPPI 在本项目中的关系？
 
-**回答核心：** 当前已验证的是 DWB 静态导航基线；后续会先建立原版 MPPI 基线，再接入 DynamicRiskCritic 并做对照。不能把“安装了 MPPI 依赖”说成“已经运行了动态 MPPI”。
+**回答核心：** DWB 和 MPPI 都是 Nav2 可替换的局部控制器；项目保留同一全局规划、地图、代价地图和底盘链路，先运行原版 MPPI 基线，再仅加入 DynamicRiskCritic 做对照。当前不能把“插件已加载、预测已缓存”说成“动态 MPPI 避障已完成”，因为风险尚未写入成本。
 
 ---
 

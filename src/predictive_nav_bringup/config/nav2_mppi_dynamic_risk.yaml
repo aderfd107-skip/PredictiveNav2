@@ -152,9 +152,14 @@ controller_server:
         cost_power: 1
         cost_weight: 5.0
         threshold_to_consider: 0.5
-      # Deliberately no risk parameters yet: Section 06 verifies loading only.
+      # Sections 07--08 cache and validate this topic. Dynamic risk scoring
+      # is still intentionally disabled until the later distance-risk step.
       DynamicRiskCritic:
         enabled: true
+        prediction_topic: "/dynamic_obstacles/predictions"
+        expected_prediction_frame: "odom"
+        max_prediction_age_s: 0.50
+        max_future_time_skew_s: 0.10
 
 planner_server:
   ros__parameters:
